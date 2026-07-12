@@ -75,10 +75,18 @@ class process_images extends \core\task\scheduled_task {
               ORDER BY f.id ASC";
 
         $fs = get_file_storage();
+        $filesystem = $fs->get_file_system();
         $records = $DB->get_records_sql($sql, ['minsize' => $minsizebytes], 0, self::BATCH_LIMIT);
 
         foreach ($records as $record) {
             $file = $fs->get_file_instance($record);
+            // The batch was queried up front, so a row's content can have
+            // disappeared in the meantime (replaced earlier in this run, or
+            // simply missing from the file store); skip anything unreadable
+            // rather than triggering PHP warnings inside get_content().
+            if (!$filesystem->is_file_readable_locally_by_storedfile($file)) {
+                continue;
+            }
             $this->optimize_file($file);
         }
     }
