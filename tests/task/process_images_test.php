@@ -54,6 +54,27 @@ final class process_images_test extends \advanced_testcase {
     }
 
     /**
+     * Build a tiny solid-colour PNG. Such an image is already about as small as
+     * PNG allows, so re-encoding it to JPEG (which carries a fixed quantisation
+     * and Huffman-table overhead) reliably produces a *larger* file — a
+     * deterministic "optimization did not help" case.
+     *
+     * @param int $width
+     * @param int $height
+     * @return string raw PNG bytes
+     */
+    private function make_solid_png(int $width, int $height): string {
+        $image = imagecreatetruecolor($width, $height);
+        $colour = imagecolorallocate($image, 200, 30, 30);
+        imagefilledrectangle($image, 0, 0, $width, $height, $colour);
+        ob_start();
+        imagepng($image, null, 9);
+        $content = ob_get_clean();
+        imagedestroy($image);
+        return $content;
+    }
+
+    /**
      * Call a protected/private method via reflection.
      *
      * @param object $object
@@ -79,10 +100,18 @@ final class process_images_test extends \advanced_testcase {
         $this->assertSame(['format' => 'webp', 'mimetype' => 'image/webp'], $result);
     }
 
-    public function test_resolve_target_format_keep_falls_back_to_jpeg(): void {
+    public function test_resolve_target_format_keep_preserves_jpeg(): void {
+        $task = new process_images();
+        $result = $this->call_protected($task, 'resolve_target_format', ['image/jpeg', 'keep']);
+        $this->assertSame(['format' => 'jpeg', 'mimetype' => 'image/jpeg'], $result);
+    }
+
+    public function test_resolve_target_format_keep_converts_gif_to_png(): void {
+        // GIF must not fall through to JPEG under "keep": that would flatten
+        // transparency (and animation) to a black background. PNG preserves it.
         $task = new process_images();
         $result = $this->call_protected($task, 'resolve_target_format', ['image/gif', 'keep']);
-        $this->assertSame(['format' => 'jpeg', 'mimetype' => 'image/jpeg'], $result);
+        $this->assertSame(['format' => 'png', 'mimetype' => 'image/png'], $result);
     }
 
     public function test_resolve_target_format_explicit_webp_overrides_original(): void {
@@ -170,7 +199,7 @@ final class process_images_test extends \advanced_testcase {
         $this->assertSame(0, $DB->count_records('tool_imageoptimize_files'));
     }
 
-    public function test_execute_skips_images_with_oversized_declared_dimensions(): void {
+    public function test_execute_records_and_skips_images_with_oversized_declared_dimensions(): void {
         global $DB;
         $this->resetAfterTest();
 
@@ -199,10 +228,73 @@ final class process_images_test extends \advanced_testcase {
         $task = new process_images();
         $task->execute();
 
-        $this->assertSame(0, $DB->count_records('tool_imageoptimize_files'));
+        // The file itself must be left completely untouched...
         $unchanged = $fs->get_file($context->id, 'tool_imageoptimize_test', 'test', 0, '/', 'bomb.png');
         $this->assertNotFalse($unchanged);
         $this->assertSame(strlen($content), (int) $unchanged->get_filesize());
+
+        // ...but it must still be recorded as processed, so it is not
+        // re-selected and re-read on every run (which, with the id-ordered
+        // capped batch, would otherwise starve other files).
+        $tracking = $DB->get_record('tool_imageoptimize_files', ['pathnamehash' => $unchanged->get_pathnamehash()]);
+        $this->assertNotFalse($tracking);
+        $this->assertSame((int) $tracking->originalsize, (int) $tracking->optimizedsize);
+
+        // A second run must not reprocess it: the tracking row makes it
+        // ineligible, so no further rows are created. (The base PHPUnit dataset
+        // may hold other eligible images, so assert the total is stable across
+        // runs rather than an absolute count.)
+        $countafterfirst = $DB->count_records('tool_imageoptimize_files');
+        $task->execute();
+        $this->assertSame($countafterfirst, $DB->count_records('tool_imageoptimize_files'));
+    }
+
+    public function test_execute_records_files_that_do_not_shrink(): void {
+        global $DB;
+        $this->resetAfterTest();
+
+        set_config('enabled', 1, 'tool_imageoptimize');
+        set_config('minsizekb', 0, 'tool_imageoptimize');
+        set_config('maxwidth', 4000, 'tool_imageoptimize');
+        set_config('maxheight', 4000, 'tool_imageoptimize');
+        set_config('quality', 80, 'tool_imageoptimize');
+        // Forcing JPEG output for a tiny solid PNG guarantees the re-encode is
+        // larger than the original, exercising the "did not shrink" path.
+        set_config('targetformat', 'jpeg', 'tool_imageoptimize');
+
+        $fs = get_file_storage();
+        $context = \context_system::instance();
+        $filerecord = [
+            'contextid' => $context->id,
+            'component' => 'tool_imageoptimize_test',
+            'filearea'  => 'test',
+            'itemid'    => 0,
+            'filepath'  => '/',
+            'filename'  => 'solid.png',
+        ];
+        $original = $fs->create_file_from_string($filerecord, $this->make_solid_png(60, 60));
+        $originalsize = (int) $original->get_filesize();
+
+        $task = new process_images();
+        $task->execute();
+
+        // The original must be left untouched (still a PNG of the same size)...
+        $unchanged = $fs->get_file($context->id, 'tool_imageoptimize_test', 'test', 0, '/', 'solid.png');
+        $this->assertNotFalse($unchanged);
+        $this->assertSame('image/png', $unchanged->get_mimetype());
+        $this->assertSame($originalsize, (int) $unchanged->get_filesize());
+
+        // ...but recorded so it is not re-decoded and re-encoded every run.
+        $tracking = $DB->get_record('tool_imageoptimize_files', ['pathnamehash' => $unchanged->get_pathnamehash()]);
+        $this->assertNotFalse($tracking);
+        $this->assertSame($originalsize, (int) $tracking->originalsize);
+        $this->assertSame($originalsize, (int) $tracking->optimizedsize);
+
+        // A second run must not reprocess it: assert the total is stable across
+        // runs (the base PHPUnit dataset may hold other eligible images).
+        $countafterfirst = $DB->count_records('tool_imageoptimize_files');
+        $task->execute();
+        $this->assertSame($countafterfirst, $DB->count_records('tool_imageoptimize_files'));
     }
 
     public function test_execute_skips_files_under_threshold(): void {
@@ -296,14 +388,22 @@ final class process_images_test extends \advanced_testcase {
             'filepath'  => '/',
             'filename'  => 'photo.png',
         ];
-        $fs->create_file_from_string($filerecord, $this->make_png(2000, 1500));
+        $created = $fs->create_file_from_string($filerecord, $this->make_png(2000, 1500));
 
         $task = new process_images();
         $task->execute();
-        $this->assertSame(1, $DB->count_records('tool_imageoptimize_files'));
+        // The file (filename, and therefore pathnamehash, is preserved) has a
+        // tracking row after the first run.
+        $this->assertTrue(
+            $DB->record_exists('tool_imageoptimize_files', ['pathnamehash' => $created->get_pathnamehash()])
+        );
 
-        // Running again must not reprocess the already-optimized file.
+        // Running again must not reprocess any already-tracked file: the total
+        // number of tracking rows is unchanged. (Asserting a stable count
+        // rather than an absolute value keeps the test robust to other eligible
+        // images present in the base PHPUnit dataset.)
+        $countafterfirst = $DB->count_records('tool_imageoptimize_files');
         $task->execute();
-        $this->assertSame(1, $DB->count_records('tool_imageoptimize_files'));
+        $this->assertSame($countafterfirst, $DB->count_records('tool_imageoptimize_files'));
     }
 }

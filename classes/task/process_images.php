@@ -61,13 +61,13 @@ class process_images extends \core\task\scheduled_task {
             return;
         }
 
-        $minsizekb = (int) get_config('tool_imageoptimize', 'minsizekb');
+        $minsizekb = max(0, (int) get_config('tool_imageoptimize', 'minsizekb'));
         $minsizebytes = $minsizekb * 1024;
 
         $sql = "SELECT f.*
                   FROM {files} f
              LEFT JOIN {tool_imageoptimize_files} o ON o.pathnamehash = f.pathnamehash
-                 WHERE f.mimetype LIKE 'image/%'
+                 WHERE " . $DB->sql_like('f.mimetype', ':mimetype') . "
                    AND f.filename <> '.'
                    AND f.filesize > :minsize
                    AND f.component <> 'tool_imageoptimize'
@@ -76,7 +76,8 @@ class process_images extends \core\task\scheduled_task {
 
         $fs = get_file_storage();
         $filesystem = $fs->get_file_system();
-        $records = $DB->get_records_sql($sql, ['minsize' => $minsizebytes], 0, self::BATCH_LIMIT);
+        $params = ['mimetype' => 'image/%', 'minsize' => $minsizebytes];
+        $records = $DB->get_records_sql($sql, $params, 0, self::BATCH_LIMIT);
 
         foreach ($records as $record) {
             $file = $fs->get_file_instance($record);
@@ -87,7 +88,15 @@ class process_images extends \core\task\scheduled_task {
             if (!$filesystem->is_file_readable_locally_by_storedfile($file)) {
                 continue;
             }
-            $this->optimize_file($file);
+            try {
+                $this->optimize_file($file);
+            } catch (\Throwable $e) {
+                // One file failing (for example an optimized write that failed
+                // after the original was restored) must not abort the rest of
+                // the batch; log it and carry on.
+                mtrace('tool_imageoptimize: failed to process file id ' .
+                    $file->get_id() . ': ' . $e->getMessage());
+            }
         }
     }
 
@@ -98,8 +107,6 @@ class process_images extends \core\task\scheduled_task {
      * @param \stored_file $file
      */
     protected function optimize_file(\stored_file $file): void {
-        global $DB;
-
         $originalsize = $file->get_filesize();
         $content = $file->get_content();
 
@@ -109,12 +116,21 @@ class process_images extends \core\task\scheduled_task {
         // up front instead of risking memory exhaustion on the cron process.
         $imageinfo = @getimagesizefromstring($content);
         if ($imageinfo === false || $imageinfo[0] * $imageinfo[1] > self::MAX_PIXELS) {
+            // This file cannot (or must not) be decoded, so it will never be
+            // optimized. Record it anyway: without a tracking row it is
+            // re-selected and its blob re-read on every run, and because the
+            // batch is ordered by id and capped, a cluster of such files would
+            // starve everything else from ever being processed.
+            $this->record_processed($file, $originalsize, $originalsize);
             return;
         }
 
-        $maxwidth = (int) get_config('tool_imageoptimize', 'maxwidth');
-        $maxheight = (int) get_config('tool_imageoptimize', 'maxheight');
-        $quality = (int) get_config('tool_imageoptimize', 'quality');
+        // Clamp administrator-configured values to sane ranges: a quality
+        // outside 1-100 or a zero dimension (which makes the resize ratio 0)
+        // would otherwise produce degenerate or failed output.
+        $maxwidth = max(1, (int) get_config('tool_imageoptimize', 'maxwidth'));
+        $maxheight = max(1, (int) get_config('tool_imageoptimize', 'maxheight'));
+        $quality = min(100, max(1, (int) get_config('tool_imageoptimize', 'quality')));
         $targetformat = get_config('tool_imageoptimize', 'targetformat');
 
         $format = $this->resolve_target_format($file->get_mimetype(), $targetformat);
@@ -126,7 +142,9 @@ class process_images extends \core\task\scheduled_task {
         }
 
         if ($newcontent === null || strlen($newcontent) >= $originalsize) {
-            // Optimization did not help; leave the original file untouched.
+            // Optimization did not help; leave the original file untouched but
+            // still record it so it is not re-decoded and re-encoded every run.
+            $this->record_processed($file, $originalsize, $originalsize);
             return;
         }
 
@@ -146,22 +164,65 @@ class process_images extends \core\task\scheduled_task {
         ];
 
         $fs = get_file_storage();
-        $file->delete();
-        $newfile = $fs->create_file_from_string($filerecord, $newcontent);
+        // Swap the content in place. The delete must come first because {files}
+        // enforces a unique pathnamehash, so the replacement cannot coexist
+        // with the original. If create_file_from_string() throws after the
+        // delete (a transient DB error, a full or read-only disk, a concurrent
+        // re-create), restore the original from the bytes still held in memory
+        // so no user file is ever lost.
+        try {
+            $file->delete();
+            $newfile = $fs->create_file_from_string($filerecord, $newcontent);
+        } catch (\Throwable $e) {
+            if (
+                !$fs->file_exists(
+                    $filerecord['contextid'],
+                    $filerecord['component'],
+                    $filerecord['filearea'],
+                    $filerecord['itemid'],
+                    $filerecord['filepath'],
+                    $filerecord['filename']
+                )
+            ) {
+                $restore = $filerecord;
+                $restore['mimetype'] = $file->get_mimetype();
+                $fs->create_file_from_string($restore, $content);
+            }
+            throw $e;
+        }
 
-        $tracking = (object) [
-            'pathnamehash'  => $newfile->get_pathnamehash(),
-            'contextid'     => $filerecord['contextid'],
-            'component'     => $filerecord['component'],
-            'filearea'      => $filerecord['filearea'],
-            'itemid'        => $filerecord['itemid'],
-            'filename'      => $filerecord['filename'],
-            'mimetype'      => $newfile->get_mimetype(),
+        $this->record_processed($newfile, $originalsize, strlen($newcontent));
+    }
+
+    /**
+     * Record that a file has been processed, in the tracking table.
+     *
+     * Called both when a file was optimized (with its new, smaller size) and
+     * when it was examined but left untouched (original size for both), so that
+     * every eligible file is remembered and is not reconsidered on later runs.
+     * The tracking row is keyed by the file's pathnamehash, which is what the
+     * selection query and the privacy provider join on.
+     *
+     * @param \stored_file $file the stored file as it exists after processing
+     * @param int $originalsize size in bytes before processing
+     * @param int $optimizedsize size in bytes after processing (equal to the
+     *                            original when the file was left unchanged)
+     */
+    private function record_processed(\stored_file $file, int $originalsize, int $optimizedsize): void {
+        global $DB;
+
+        $DB->insert_record('tool_imageoptimize_files', (object) [
+            'pathnamehash'  => $file->get_pathnamehash(),
+            'contextid'     => $file->get_contextid(),
+            'component'     => $file->get_component(),
+            'filearea'      => $file->get_filearea(),
+            'itemid'        => $file->get_itemid(),
+            'filename'      => $file->get_filename(),
+            'mimetype'      => $file->get_mimetype(),
             'originalsize'  => $originalsize,
-            'optimizedsize' => strlen($newcontent),
+            'optimizedsize' => $optimizedsize,
             'timeprocessed' => time(),
-        ];
-        $DB->insert_record('tool_imageoptimize_files', $tracking);
+        ]);
     }
 
     /**
@@ -179,6 +240,12 @@ class process_images extends \core\task\scheduled_task {
             }
             if ($originalmimetype === 'image/webp') {
                 return ['format' => 'webp', 'mimetype' => 'image/webp'];
+            }
+            if ($originalmimetype === 'image/gif') {
+                // GIF carries transparency (and possibly animation). Re-encoding
+                // it as JPEG would flatten transparent pixels to black, so keep
+                // it in a transparency-capable format (PNG) instead.
+                return ['format' => 'png', 'mimetype' => 'image/png'];
             }
             return ['format' => 'jpeg', 'mimetype' => 'image/jpeg'];
         }
@@ -223,8 +290,21 @@ class process_images extends \core\task\scheduled_task {
                 );
             }
 
+            // Preserve the ICC colour profile across the strip. Dropping EXIF
+            // and other metadata keeps files small, but discarding the colour
+            // profile would visibly shift colours on wide-gamut images.
+            $icc = '';
+            try {
+                $icc = $im->getImageProfile('icc');
+            } catch (\ImagickException $e) {
+                $icc = '';
+            }
+
             $im->setImageCompressionQuality($quality);
             $im->stripImage();
+            if ($icc !== '') {
+                $im->profileImage('icc', $icc);
+            }
             $im->setImageFormat($format);
             if ($format === 'jpeg') {
                 $im->setInterlaceScheme(\Imagick::INTERLACE_PLANE);

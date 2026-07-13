@@ -32,7 +32,7 @@ if ($hassiteconfig) {
         'tool_imageoptimize/enabled',
         get_string('settings:enabled', 'tool_imageoptimize'),
         get_string('settings:enabled_desc', 'tool_imageoptimize'),
-        1
+        0
     ));
 
     $settings->add(new admin_setting_configtext(

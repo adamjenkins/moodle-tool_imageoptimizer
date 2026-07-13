@@ -7,7 +7,7 @@
     <TABLE NAME="tool_imageoptimize_files" COMMENT="Tracks files that have been processed by the image optimizer.">
       <FIELDS>
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
-        <FIELD NAME="pathnamehash" TYPE="char" LENGTH="40" NOTNULL="true" SEQUENCE="false" COMMENT="Content hash of the optimized file."/>
+        <FIELD NAME="pathnamehash" TYPE="char" LENGTH="40" NOTNULL="true" SEQUENCE="false" COMMENT="Path hash (pathnamehash) of the processed file, used to join back to the core files table."/>
         <FIELD NAME="contextid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
         <FIELD NAME="component" TYPE="char" LENGTH="100" NOTNULL="true" SEQUENCE="false"/>
         <FIELD NAME="filearea" TYPE="char" LENGTH="100" NOTNULL="true" SEQUENCE="false"/>

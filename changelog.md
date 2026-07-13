@@ -2,6 +2,37 @@
 
 All notable changes to `tool_imageoptimize` are documented here.
 
+## v1.1.0 (2026-07-13)
+
+Robustness and safety hardening following an external code review.
+
+- Changed: image optimization is now **disabled by default**. The task
+  rewrites images in place irreversibly, so a fresh install no longer starts
+  altering site-wide content until an administrator consciously enables it.
+  (Existing installs keep their current setting.)
+- Fixed: a file whose optimization did not reduce its size — and a file that
+  cannot be decoded (e.g. a decompression-bomb reject) — is now recorded in
+  the tracking table. Previously such files had no tracking row and were
+  re-selected, re-decoded and re-encoded on **every** run; because the batch
+  is ordered by id and capped, a cluster of them could starve all other
+  files from ever being processed.
+- Fixed: potential data-loss window in the in-place swap. The original file
+  is now restored from the in-memory bytes if creating the optimized
+  replacement fails after the original was deleted, and a single file
+  failing no longer aborts the rest of the batch.
+- Fixed: under "keep original", GIF images are now re-encoded to PNG rather
+  than JPEG, preserving transparency (a transparent GIF previously became a
+  black-background JPEG).
+- Changed: the ICC colour profile is now preserved when stripping metadata
+  (Imagick path), so wide-gamut images no longer shift colour.
+- Changed: administrator-configured quality and dimensions are clamped to
+  sane ranges (quality 1–100, dimensions ≥ 1) before use.
+- Changed: the selection query uses `$DB->sql_like()` for portability.
+- Fixed: the `pathnamehash` column comment and its privacy-export
+  description no longer mislabel it as a "content hash".
+- Changed: `$plugin->requires` raised to Moodle 5.0 (matching the supported
+  range) and maturity set to stable for the 1.x line.
+
 ## v1.0.0 (2026-06-24)
 
 - Initial release.
