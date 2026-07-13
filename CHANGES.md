@@ -1,5 +1,11 @@
 # Changes
 
+## v1.1.1
+
+- Renamed the plugin to **`tool_imageoptimizer`** ("Image optimizer"); the old
+  name `tool_imageoptimize` clashed with a different plugin already on
+  moodle.org. No functional changes.
+
 ## v1.1.0
 
 Robustness and safety hardening following an external code review.

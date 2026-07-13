@@ -15,20 +15,20 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Upgrade steps for tool_imageoptimize.
+ * Upgrade steps for tool_imageoptimizer.
  *
- * @package    tool_imageoptimize
+ * @package    tool_imageoptimizer
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 /**
- * Upgrade function for tool_imageoptimize.
+ * Upgrade function for tool_imageoptimizer.
  *
  * @param int $oldversion
  * @return bool
  */
-function xmldb_tool_imageoptimize_upgrade($oldversion) {
+function xmldb_tool_imageoptimizer_upgrade($oldversion) {
     // No upgrade steps yet.
     return true;
 }

@@ -17,12 +17,12 @@
 /**
  * Scheduled task that optimizes newly uploaded image files.
  *
- * @package    tool_imageoptimize
+ * @package    tool_imageoptimizer
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-namespace tool_imageoptimize\task;
+namespace tool_imageoptimizer\task;
 
 /**
  * Finds image files above the configured size threshold that have not yet
@@ -48,7 +48,7 @@ class process_images extends \core\task\scheduled_task {
      * @return string
      */
     public function get_name() {
-        return get_string('task:processimages', 'tool_imageoptimize');
+        return get_string('task:processimages', 'tool_imageoptimizer');
     }
 
     /**
@@ -57,20 +57,20 @@ class process_images extends \core\task\scheduled_task {
     public function execute() {
         global $DB;
 
-        if (!get_config('tool_imageoptimize', 'enabled')) {
+        if (!get_config('tool_imageoptimizer', 'enabled')) {
             return;
         }
 
-        $minsizekb = max(0, (int) get_config('tool_imageoptimize', 'minsizekb'));
+        $minsizekb = max(0, (int) get_config('tool_imageoptimizer', 'minsizekb'));
         $minsizebytes = $minsizekb * 1024;
 
         $sql = "SELECT f.*
                   FROM {files} f
-             LEFT JOIN {tool_imageoptimize_files} o ON o.pathnamehash = f.pathnamehash
+             LEFT JOIN {tool_imageoptimizer_files} o ON o.pathnamehash = f.pathnamehash
                  WHERE " . $DB->sql_like('f.mimetype', ':mimetype') . "
                    AND f.filename <> '.'
                    AND f.filesize > :minsize
-                   AND f.component <> 'tool_imageoptimize'
+                   AND f.component <> 'tool_imageoptimizer'
                    AND o.id IS NULL
               ORDER BY f.id ASC";
 
@@ -94,7 +94,7 @@ class process_images extends \core\task\scheduled_task {
                 // One file failing (for example an optimized write that failed
                 // after the original was restored) must not abort the rest of
                 // the batch; log it and carry on.
-                mtrace('tool_imageoptimize: failed to process file id ' .
+                mtrace('tool_imageoptimizer: failed to process file id ' .
                     $file->get_id() . ': ' . $e->getMessage());
             }
         }
@@ -128,10 +128,10 @@ class process_images extends \core\task\scheduled_task {
         // Clamp administrator-configured values to sane ranges: a quality
         // outside 1-100 or a zero dimension (which makes the resize ratio 0)
         // would otherwise produce degenerate or failed output.
-        $maxwidth = max(1, (int) get_config('tool_imageoptimize', 'maxwidth'));
-        $maxheight = max(1, (int) get_config('tool_imageoptimize', 'maxheight'));
-        $quality = min(100, max(1, (int) get_config('tool_imageoptimize', 'quality')));
-        $targetformat = get_config('tool_imageoptimize', 'targetformat');
+        $maxwidth = max(1, (int) get_config('tool_imageoptimizer', 'maxwidth'));
+        $maxheight = max(1, (int) get_config('tool_imageoptimizer', 'maxheight'));
+        $quality = min(100, max(1, (int) get_config('tool_imageoptimizer', 'quality')));
+        $targetformat = get_config('tool_imageoptimizer', 'targetformat');
 
         $format = $this->resolve_target_format($file->get_mimetype(), $targetformat);
 
@@ -211,7 +211,7 @@ class process_images extends \core\task\scheduled_task {
     private function record_processed(\stored_file $file, int $originalsize, int $optimizedsize): void {
         global $DB;
 
-        $DB->insert_record('tool_imageoptimize_files', (object) [
+        $DB->insert_record('tool_imageoptimizer_files', (object) [
             'pathnamehash'  => $file->get_pathnamehash(),
             'contextid'     => $file->get_contextid(),
             'component'     => $file->get_component(),

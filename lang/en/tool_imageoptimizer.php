@@ -15,9 +15,9 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Language strings for tool_imageoptimize.
+ * Language strings for tool_imageoptimizer.
  *
- * @package    tool_imageoptimize
+ * @package    tool_imageoptimizer
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -27,13 +27,13 @@ defined('MOODLE_INTERNAL') || die();
 $string['format:jpeg'] = 'JPEG';
 $string['format:keep'] = 'Keep original';
 $string['format:webp'] = 'WEBP';
-$string['pluginname'] = 'Image optimize';
-$string['privacy:metadata:tool_imageoptimize_files'] = 'Records of files that have been processed by the image optimizer.';
-$string['privacy:metadata:tool_imageoptimize_files:filename'] = 'The name of the processed file.';
-$string['privacy:metadata:tool_imageoptimize_files:optimizedsize'] = 'The size of the file after optimization.';
-$string['privacy:metadata:tool_imageoptimize_files:originalsize'] = 'The size of the file before optimization.';
-$string['privacy:metadata:tool_imageoptimize_files:pathnamehash'] = 'The path hash identifying the processed file within Moodle\'s file storage.';
-$string['privacy:metadata:tool_imageoptimize_files:timeprocessed'] = 'The time the file was processed.';
+$string['pluginname'] = 'Image optimizer';
+$string['privacy:metadata:tool_imageoptimizer_files'] = 'Records of files that have been processed by the image optimizer.';
+$string['privacy:metadata:tool_imageoptimizer_files:filename'] = 'The name of the processed file.';
+$string['privacy:metadata:tool_imageoptimizer_files:optimizedsize'] = 'The size of the file after optimization.';
+$string['privacy:metadata:tool_imageoptimizer_files:originalsize'] = 'The size of the file before optimization.';
+$string['privacy:metadata:tool_imageoptimizer_files:pathnamehash'] = 'The path hash identifying the processed file within Moodle\'s file storage.';
+$string['privacy:metadata:tool_imageoptimizer_files:timeprocessed'] = 'The time the file was processed.';
 $string['settings:enabled'] = 'Enable image optimization';
 $string['settings:enabled_desc'] = 'When enabled, the scheduled task will optimize eligible image files.';
 $string['settings:maxheight'] = 'Maximum height (px)';

@@ -15,19 +15,19 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Tests for the tool_imageoptimize\task\process_images scheduled task.
+ * Tests for the tool_imageoptimizer\task\process_images scheduled task.
  *
- * @package    tool_imageoptimize
+ * @package    tool_imageoptimizer
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-namespace tool_imageoptimize\task;
+namespace tool_imageoptimizer\task;
 
 /**
  * Tests for process_images.
  *
- * @covers \tool_imageoptimize\task\process_images
+ * @covers \tool_imageoptimizer\task\process_images
  */
 final class process_images_test extends \advanced_testcase {
     /**
@@ -178,14 +178,14 @@ final class process_images_test extends \advanced_testcase {
         global $DB;
         $this->resetAfterTest();
 
-        set_config('enabled', 0, 'tool_imageoptimize');
-        set_config('minsizekb', 1, 'tool_imageoptimize');
+        set_config('enabled', 0, 'tool_imageoptimizer');
+        set_config('minsizekb', 1, 'tool_imageoptimizer');
 
         $fs = get_file_storage();
         $context = \context_system::instance();
         $filerecord = [
             'contextid' => $context->id,
-            'component' => 'tool_imageoptimize_test',
+            'component' => 'tool_imageoptimizer_test',
             'filearea'  => 'test',
             'itemid'    => 0,
             'filepath'  => '/',
@@ -196,15 +196,15 @@ final class process_images_test extends \advanced_testcase {
         $task = new process_images();
         $task->execute();
 
-        $this->assertSame(0, $DB->count_records('tool_imageoptimize_files'));
+        $this->assertSame(0, $DB->count_records('tool_imageoptimizer_files'));
     }
 
     public function test_execute_records_and_skips_images_with_oversized_declared_dimensions(): void {
         global $DB;
         $this->resetAfterTest();
 
-        set_config('enabled', 1, 'tool_imageoptimize');
-        set_config('minsizekb', 0, 'tool_imageoptimize');
+        set_config('enabled', 1, 'tool_imageoptimizer');
+        set_config('minsizekb', 0, 'tool_imageoptimizer');
 
         // A forged PNG header declaring an enormous canvas (50000x50000 =
         // 2.5 billion pixels) in a tiny file. GD/Imagick allocate memory
@@ -217,7 +217,7 @@ final class process_images_test extends \advanced_testcase {
         $context = \context_system::instance();
         $filerecord = [
             'contextid' => $context->id,
-            'component' => 'tool_imageoptimize_test',
+            'component' => 'tool_imageoptimizer_test',
             'filearea'  => 'test',
             'itemid'    => 0,
             'filepath'  => '/',
@@ -229,14 +229,14 @@ final class process_images_test extends \advanced_testcase {
         $task->execute();
 
         // The file itself must be left completely untouched...
-        $unchanged = $fs->get_file($context->id, 'tool_imageoptimize_test', 'test', 0, '/', 'bomb.png');
+        $unchanged = $fs->get_file($context->id, 'tool_imageoptimizer_test', 'test', 0, '/', 'bomb.png');
         $this->assertNotFalse($unchanged);
         $this->assertSame(strlen($content), (int) $unchanged->get_filesize());
 
         // ...but it must still be recorded as processed, so it is not
         // re-selected and re-read on every run (which, with the id-ordered
         // capped batch, would otherwise starve other files).
-        $tracking = $DB->get_record('tool_imageoptimize_files', ['pathnamehash' => $unchanged->get_pathnamehash()]);
+        $tracking = $DB->get_record('tool_imageoptimizer_files', ['pathnamehash' => $unchanged->get_pathnamehash()]);
         $this->assertNotFalse($tracking);
         $this->assertSame((int) $tracking->originalsize, (int) $tracking->optimizedsize);
 
@@ -244,29 +244,29 @@ final class process_images_test extends \advanced_testcase {
         // ineligible, so no further rows are created. (The base PHPUnit dataset
         // may hold other eligible images, so assert the total is stable across
         // runs rather than an absolute count.)
-        $countafterfirst = $DB->count_records('tool_imageoptimize_files');
+        $countafterfirst = $DB->count_records('tool_imageoptimizer_files');
         $task->execute();
-        $this->assertSame($countafterfirst, $DB->count_records('tool_imageoptimize_files'));
+        $this->assertSame($countafterfirst, $DB->count_records('tool_imageoptimizer_files'));
     }
 
     public function test_execute_records_files_that_do_not_shrink(): void {
         global $DB;
         $this->resetAfterTest();
 
-        set_config('enabled', 1, 'tool_imageoptimize');
-        set_config('minsizekb', 0, 'tool_imageoptimize');
-        set_config('maxwidth', 4000, 'tool_imageoptimize');
-        set_config('maxheight', 4000, 'tool_imageoptimize');
-        set_config('quality', 80, 'tool_imageoptimize');
+        set_config('enabled', 1, 'tool_imageoptimizer');
+        set_config('minsizekb', 0, 'tool_imageoptimizer');
+        set_config('maxwidth', 4000, 'tool_imageoptimizer');
+        set_config('maxheight', 4000, 'tool_imageoptimizer');
+        set_config('quality', 80, 'tool_imageoptimizer');
         // Forcing JPEG output for a tiny solid PNG guarantees the re-encode is
         // larger than the original, exercising the "did not shrink" path.
-        set_config('targetformat', 'jpeg', 'tool_imageoptimize');
+        set_config('targetformat', 'jpeg', 'tool_imageoptimizer');
 
         $fs = get_file_storage();
         $context = \context_system::instance();
         $filerecord = [
             'contextid' => $context->id,
-            'component' => 'tool_imageoptimize_test',
+            'component' => 'tool_imageoptimizer_test',
             'filearea'  => 'test',
             'itemid'    => 0,
             'filepath'  => '/',
@@ -279,36 +279,36 @@ final class process_images_test extends \advanced_testcase {
         $task->execute();
 
         // The original must be left untouched (still a PNG of the same size)...
-        $unchanged = $fs->get_file($context->id, 'tool_imageoptimize_test', 'test', 0, '/', 'solid.png');
+        $unchanged = $fs->get_file($context->id, 'tool_imageoptimizer_test', 'test', 0, '/', 'solid.png');
         $this->assertNotFalse($unchanged);
         $this->assertSame('image/png', $unchanged->get_mimetype());
         $this->assertSame($originalsize, (int) $unchanged->get_filesize());
 
         // ...but recorded so it is not re-decoded and re-encoded every run.
-        $tracking = $DB->get_record('tool_imageoptimize_files', ['pathnamehash' => $unchanged->get_pathnamehash()]);
+        $tracking = $DB->get_record('tool_imageoptimizer_files', ['pathnamehash' => $unchanged->get_pathnamehash()]);
         $this->assertNotFalse($tracking);
         $this->assertSame($originalsize, (int) $tracking->originalsize);
         $this->assertSame($originalsize, (int) $tracking->optimizedsize);
 
         // A second run must not reprocess it: assert the total is stable across
         // runs (the base PHPUnit dataset may hold other eligible images).
-        $countafterfirst = $DB->count_records('tool_imageoptimize_files');
+        $countafterfirst = $DB->count_records('tool_imageoptimizer_files');
         $task->execute();
-        $this->assertSame($countafterfirst, $DB->count_records('tool_imageoptimize_files'));
+        $this->assertSame($countafterfirst, $DB->count_records('tool_imageoptimizer_files'));
     }
 
     public function test_execute_skips_files_under_threshold(): void {
         global $DB;
         $this->resetAfterTest();
 
-        set_config('enabled', 1, 'tool_imageoptimize');
-        set_config('minsizekb', 100000, 'tool_imageoptimize');
+        set_config('enabled', 1, 'tool_imageoptimizer');
+        set_config('minsizekb', 100000, 'tool_imageoptimizer');
 
         $fs = get_file_storage();
         $context = \context_system::instance();
         $filerecord = [
             'contextid' => $context->id,
-            'component' => 'tool_imageoptimize_test',
+            'component' => 'tool_imageoptimizer_test',
             'filearea'  => 'test',
             'itemid'    => 0,
             'filepath'  => '/',
@@ -319,25 +319,25 @@ final class process_images_test extends \advanced_testcase {
         $task = new process_images();
         $task->execute();
 
-        $this->assertSame(0, $DB->count_records('tool_imageoptimize_files'));
+        $this->assertSame(0, $DB->count_records('tool_imageoptimizer_files'));
     }
 
     public function test_execute_optimizes_file_and_preserves_filename(): void {
         global $DB;
         $this->resetAfterTest();
 
-        set_config('enabled', 1, 'tool_imageoptimize');
-        set_config('minsizekb', 1, 'tool_imageoptimize');
-        set_config('maxwidth', 1920, 'tool_imageoptimize');
-        set_config('maxheight', 1080, 'tool_imageoptimize');
-        set_config('quality', 80, 'tool_imageoptimize');
-        set_config('targetformat', 'jpeg', 'tool_imageoptimize');
+        set_config('enabled', 1, 'tool_imageoptimizer');
+        set_config('minsizekb', 1, 'tool_imageoptimizer');
+        set_config('maxwidth', 1920, 'tool_imageoptimizer');
+        set_config('maxheight', 1080, 'tool_imageoptimizer');
+        set_config('quality', 80, 'tool_imageoptimizer');
+        set_config('targetformat', 'jpeg', 'tool_imageoptimizer');
 
         $fs = get_file_storage();
         $context = \context_system::instance();
         $filerecord = [
             'contextid' => $context->id,
-            'component' => 'tool_imageoptimize_test',
+            'component' => 'tool_imageoptimizer_test',
             'filearea'  => 'test',
             'itemid'    => 0,
             'filepath'  => '/',
@@ -352,7 +352,7 @@ final class process_images_test extends \advanced_testcase {
         // The filename must never change: embedded "@@PLUGINFILE@@/photo.png"
         // references in rich text content rely on the literal filename
         // staying stable, even though the underlying bytes/format change.
-        $optimized = $fs->get_file($context->id, 'tool_imageoptimize_test', 'test', 0, '/', 'photo.png');
+        $optimized = $fs->get_file($context->id, 'tool_imageoptimizer_test', 'test', 0, '/', 'photo.png');
         $this->assertNotFalse($optimized);
         $this->assertSame('photo.png', $optimized->get_filename());
         $this->assertLessThan($originalsize, $optimized->get_filesize());
@@ -363,7 +363,7 @@ final class process_images_test extends \advanced_testcase {
         $info = getimagesizefromstring($optimized->get_content());
         $this->assertSame('image/jpeg', $info['mime']);
 
-        $tracking = $DB->get_record('tool_imageoptimize_files', ['pathnamehash' => $optimized->get_pathnamehash()]);
+        $tracking = $DB->get_record('tool_imageoptimizer_files', ['pathnamehash' => $optimized->get_pathnamehash()]);
         $this->assertNotFalse($tracking);
         $this->assertSame('photo.png', $tracking->filename);
         $this->assertSame((int) $originalsize, (int) $tracking->originalsize);
@@ -374,15 +374,15 @@ final class process_images_test extends \advanced_testcase {
         global $DB;
         $this->resetAfterTest();
 
-        set_config('enabled', 1, 'tool_imageoptimize');
-        set_config('minsizekb', 1, 'tool_imageoptimize');
-        set_config('targetformat', 'keep', 'tool_imageoptimize');
+        set_config('enabled', 1, 'tool_imageoptimizer');
+        set_config('minsizekb', 1, 'tool_imageoptimizer');
+        set_config('targetformat', 'keep', 'tool_imageoptimizer');
 
         $fs = get_file_storage();
         $context = \context_system::instance();
         $filerecord = [
             'contextid' => $context->id,
-            'component' => 'tool_imageoptimize_test',
+            'component' => 'tool_imageoptimizer_test',
             'filearea'  => 'test',
             'itemid'    => 0,
             'filepath'  => '/',
@@ -395,15 +395,15 @@ final class process_images_test extends \advanced_testcase {
         // The file (filename, and therefore pathnamehash, is preserved) has a
         // tracking row after the first run.
         $this->assertTrue(
-            $DB->record_exists('tool_imageoptimize_files', ['pathnamehash' => $created->get_pathnamehash()])
+            $DB->record_exists('tool_imageoptimizer_files', ['pathnamehash' => $created->get_pathnamehash()])
         );
 
         // Running again must not reprocess any already-tracked file: the total
         // number of tracking rows is unchanged. (Asserting a stable count
         // rather than an absolute value keeps the test robust to other eligible
         // images present in the base PHPUnit dataset.)
-        $countafterfirst = $DB->count_records('tool_imageoptimize_files');
+        $countafterfirst = $DB->count_records('tool_imageoptimizer_files');
         $task->execute();
-        $this->assertSame($countafterfirst, $DB->count_records('tool_imageoptimize_files'));
+        $this->assertSame($countafterfirst, $DB->count_records('tool_imageoptimizer_files'));
     }
 }

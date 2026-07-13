@@ -15,9 +15,9 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Admin settings for tool_imageoptimize.
+ * Admin settings for tool_imageoptimizer.
  *
- * @package    tool_imageoptimize
+ * @package    tool_imageoptimizer
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -25,57 +25,57 @@
 defined('MOODLE_INTERNAL') || die();
 
 if ($hassiteconfig) {
-    $settings = new admin_settingpage('tool_imageoptimize_settings', get_string('pluginname', 'tool_imageoptimize'));
+    $settings = new admin_settingpage('tool_imageoptimizer_settings', get_string('pluginname', 'tool_imageoptimizer'));
     $ADMIN->add('tools', $settings);
 
     $settings->add(new admin_setting_configcheckbox(
-        'tool_imageoptimize/enabled',
-        get_string('settings:enabled', 'tool_imageoptimize'),
-        get_string('settings:enabled_desc', 'tool_imageoptimize'),
+        'tool_imageoptimizer/enabled',
+        get_string('settings:enabled', 'tool_imageoptimizer'),
+        get_string('settings:enabled_desc', 'tool_imageoptimizer'),
         0
     ));
 
     $settings->add(new admin_setting_configtext(
-        'tool_imageoptimize/minsizekb',
-        get_string('settings:minsizekb', 'tool_imageoptimize'),
-        get_string('settings:minsizekb_desc', 'tool_imageoptimize'),
+        'tool_imageoptimizer/minsizekb',
+        get_string('settings:minsizekb', 'tool_imageoptimizer'),
+        get_string('settings:minsizekb_desc', 'tool_imageoptimizer'),
         500,
         PARAM_INT
     ));
 
     $settings->add(new admin_setting_configtext(
-        'tool_imageoptimize/maxwidth',
-        get_string('settings:maxwidth', 'tool_imageoptimize'),
-        get_string('settings:maxwidth_desc', 'tool_imageoptimize'),
+        'tool_imageoptimizer/maxwidth',
+        get_string('settings:maxwidth', 'tool_imageoptimizer'),
+        get_string('settings:maxwidth_desc', 'tool_imageoptimizer'),
         1920,
         PARAM_INT
     ));
 
     $settings->add(new admin_setting_configtext(
-        'tool_imageoptimize/maxheight',
-        get_string('settings:maxheight', 'tool_imageoptimize'),
-        get_string('settings:maxheight_desc', 'tool_imageoptimize'),
+        'tool_imageoptimizer/maxheight',
+        get_string('settings:maxheight', 'tool_imageoptimizer'),
+        get_string('settings:maxheight_desc', 'tool_imageoptimizer'),
         1080,
         PARAM_INT
     ));
 
     $settings->add(new admin_setting_configtext(
-        'tool_imageoptimize/quality',
-        get_string('settings:quality', 'tool_imageoptimize'),
-        get_string('settings:quality_desc', 'tool_imageoptimize'),
+        'tool_imageoptimizer/quality',
+        get_string('settings:quality', 'tool_imageoptimizer'),
+        get_string('settings:quality_desc', 'tool_imageoptimizer'),
         80,
         PARAM_INT
     ));
 
     $settings->add(new admin_setting_configselect(
-        'tool_imageoptimize/targetformat',
-        get_string('settings:targetformat', 'tool_imageoptimize'),
-        get_string('settings:targetformat_desc', 'tool_imageoptimize'),
+        'tool_imageoptimizer/targetformat',
+        get_string('settings:targetformat', 'tool_imageoptimizer'),
+        get_string('settings:targetformat_desc', 'tool_imageoptimizer'),
         'keep',
         [
-            'keep' => get_string('format:keep', 'tool_imageoptimize'),
-            'jpeg' => get_string('format:jpeg', 'tool_imageoptimize'),
-            'webp' => get_string('format:webp', 'tool_imageoptimize'),
+            'keep' => get_string('format:keep', 'tool_imageoptimizer'),
+            'jpeg' => get_string('format:jpeg', 'tool_imageoptimizer'),
+            'webp' => get_string('format:webp', 'tool_imageoptimizer'),
         ]
     ));
 }

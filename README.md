@@ -1,4 +1,4 @@
-# tool_imageoptimize
+# tool_imageoptimizer
 
 An admin tool plugin for Moodle that automatically resizes and recompresses
 oversized images stored anywhere in Moodle's file storage, to reduce disk
@@ -8,7 +8,7 @@ usage and improve page load times.
 
 Moodle's file API has no single, universal "file uploaded" event fired for
 every component, so this plugin works by polling instead of hooking upload
-events directly: a scheduled task (`tool_imageoptimize\task\process_images`,
+events directly: a scheduled task (`tool_imageoptimizer\task\process_images`,
 runs every 15 minutes by default) scans the `files` table for image files
 above a configurable size threshold that haven't been processed yet, and:
 
@@ -18,7 +18,7 @@ above a configurable size threshold that haven't been processed yet, and:
    different format (JPEG or WEBP), or keeping the original format.
 3. Replaces the stored file's content in place — **the filename is never
    changed**, only the bytes and the mimetype.
-4. Records the result in the `tool_imageoptimize_files` tracking table so
+4. Records the result in the `tool_imageoptimizer_files` tracking table so
    the same file isn't reprocessed on the next run.
 
 Imagick is used when the extension is available (better quality/format
@@ -47,7 +47,7 @@ inspect file storage directly or rely on the extension elsewhere.
 
 ## Settings
 
-Site administration → Plugins → Admin tools → Image optimize:
+Site administration → Plugins → Admin tools → Image optimizer:
 
 | Setting | Description | Default |
 |---|---|---|
@@ -67,7 +67,7 @@ Site administration → Plugins → Admin tools → Image optimize:
 ## Privacy
 
 This plugin stores metadata about which files it has processed (filename,
-original/optimized size, timestamp) in `tool_imageoptimize_files`. That
+original/optimized size, timestamp) in `tool_imageoptimizer_files`. That
 table has no `userid` column of its own — ownership for GDPR export/delete
 requests is resolved by joining against the core `files` table via the
 file's content hash. See `classes/privacy/provider.php`.
@@ -87,7 +87,7 @@ file's content hash. See `classes/privacy/provider.php`.
 
 ```bash
 php admin/tool/phpunit/cli/init.php   # first time only
-vendor/bin/phpunit admin/tool/imageoptimize/tests/
+vendor/bin/phpunit admin/tool/imageoptimizer/tests/
 ```
 
 See `CHANGES.md` for version history.

@@ -15,9 +15,9 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Scheduled task definitions for tool_imageoptimize.
+ * Scheduled task definitions for tool_imageoptimizer.
  *
- * @package    tool_imageoptimize
+ * @package    tool_imageoptimizer
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -26,7 +26,7 @@ defined('MOODLE_INTERNAL') || die();
 
 $tasks = [
     [
-        'classname' => 'tool_imageoptimize\task\process_images',
+        'classname' => 'tool_imageoptimizer\task\process_images',
         'blocking'  => 0,
         'minute'    => '*/15',
         'hour'      => '*',

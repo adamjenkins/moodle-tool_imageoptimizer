@@ -1,5 +1,5 @@
 {
-    "name": "adamjenkins/moodle-tool_imageoptimize",
+    "name": "adamjenkins/moodle-tool_imageoptimizer",
     "description": "An admin tool plugin that automatically resizes and recompresses oversized images stored in Moodle's file storage",
     "type": "moodle-tool",
     "require": {

@@ -15,14 +15,14 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Tests for the tool_imageoptimize privacy provider.
+ * Tests for the tool_imageoptimizer privacy provider.
  *
- * @package    tool_imageoptimize
+ * @package    tool_imageoptimizer
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-namespace tool_imageoptimize\privacy;
+namespace tool_imageoptimizer\privacy;
 
 use core_privacy\local\request\approved_contextlist;
 use core_privacy\local\request\approved_userlist;
@@ -32,7 +32,7 @@ use core_privacy\local\request\writer;
 /**
  * Tests for the privacy provider.
  *
- * @covers \tool_imageoptimize\privacy\provider
+ * @covers \tool_imageoptimizer\privacy\provider
  */
 final class provider_test extends \core_privacy\tests\provider_testcase {
     /**
@@ -49,7 +49,7 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
         $fs = get_file_storage();
         $filerecord = [
             'contextid' => $context->id,
-            'component' => 'tool_imageoptimize_test',
+            'component' => 'tool_imageoptimizer_test',
             'filearea'  => 'test',
             'itemid'    => 0,
             'filepath'  => '/',
@@ -61,7 +61,7 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
         $tracking = (object) [
             'pathnamehash'  => $file->get_pathnamehash(),
             'contextid'     => $context->id,
-            'component'     => 'tool_imageoptimize_test',
+            'component'     => 'tool_imageoptimizer_test',
             'filearea'      => 'test',
             'itemid'        => 0,
             'filename'      => $filename,
@@ -70,12 +70,12 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
             'optimizedsize' => 100,
             'timeprocessed' => time(),
         ];
-        $tracking->id = $DB->insert_record('tool_imageoptimize_files', $tracking);
+        $tracking->id = $DB->insert_record('tool_imageoptimizer_files', $tracking);
         return $tracking;
     }
 
     public function test_get_metadata(): void {
-        $collection = new \core_privacy\local\metadata\collection('tool_imageoptimize');
+        $collection = new \core_privacy\local\metadata\collection('tool_imageoptimizer');
         $result = provider::get_metadata($collection);
         $this->assertCount(1, $result->get_collection());
     }
@@ -108,7 +108,7 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
         $this->create_tracked_file($user1, $context, 'a.jpg');
         $this->create_tracked_file($user2, $context, 'b.jpg');
 
-        $userlist = new userlist($context, 'tool_imageoptimize');
+        $userlist = new userlist($context, 'tool_imageoptimizer');
         provider::get_users_in_context($userlist);
 
         $this->assertEqualsCanonicalizing([$user1->id, $user2->id], $userlist->get_userids());
@@ -122,10 +122,10 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
         $this->create_tracked_file($user, $context, 'photo.jpg');
 
         $this->setUser($user);
-        $approved = new approved_contextlist($user, 'tool_imageoptimize', [$context->id]);
+        $approved = new approved_contextlist($user, 'tool_imageoptimizer', [$context->id]);
         provider::export_user_data($approved);
 
-        $exported = writer::with_context($context)->get_data(['tool_imageoptimize']);
+        $exported = writer::with_context($context)->get_data(['tool_imageoptimizer']);
         $this->assertNotEmpty($exported);
         $this->assertCount(1, $exported->files);
         $this->assertSame('photo.jpg', $exported->files[0]['filename']);
@@ -144,7 +144,7 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
 
         provider::delete_data_for_all_users_in_context($context);
 
-        $this->assertSame(0, $DB->count_records('tool_imageoptimize_files', ['contextid' => $context->id]));
+        $this->assertSame(0, $DB->count_records('tool_imageoptimizer_files', ['contextid' => $context->id]));
     }
 
     public function test_delete_data_for_user(): void {
@@ -159,11 +159,11 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
         $tracking1 = $this->create_tracked_file($user1, $context1);
         $this->create_tracked_file($user2, $context2);
 
-        $approved = new approved_contextlist($user1, 'tool_imageoptimize', [$context1->id]);
+        $approved = new approved_contextlist($user1, 'tool_imageoptimizer', [$context1->id]);
         provider::delete_data_for_user($approved);
 
-        $this->assertFalse($DB->record_exists('tool_imageoptimize_files', ['id' => $tracking1->id]));
-        $this->assertSame(1, $DB->count_records('tool_imageoptimize_files'));
+        $this->assertFalse($DB->record_exists('tool_imageoptimizer_files', ['id' => $tracking1->id]));
+        $this->assertSame(1, $DB->count_records('tool_imageoptimizer_files'));
     }
 
     public function test_delete_data_for_users(): void {
@@ -177,10 +177,10 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
         $tracking1 = $this->create_tracked_file($user1, $context, 'a.jpg');
         $tracking2 = $this->create_tracked_file($user2, $context, 'b.jpg');
 
-        $approved = new approved_userlist($context, 'tool_imageoptimize', [$user1->id]);
+        $approved = new approved_userlist($context, 'tool_imageoptimizer', [$user1->id]);
         provider::delete_data_for_users($approved);
 
-        $this->assertFalse($DB->record_exists('tool_imageoptimize_files', ['id' => $tracking1->id]));
-        $this->assertTrue($DB->record_exists('tool_imageoptimize_files', ['id' => $tracking2->id]));
+        $this->assertFalse($DB->record_exists('tool_imageoptimizer_files', ['id' => $tracking1->id]));
+        $this->assertTrue($DB->record_exists('tool_imageoptimizer_files', ['id' => $tracking2->id]));
     }
 }

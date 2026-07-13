@@ -1,6 +1,13 @@
 # Changelog
 
-All notable changes to `tool_imageoptimize` are documented here.
+All notable changes to `tool_imageoptimizer` are documented here.
+
+## v1.1.1 (2026-07-13)
+
+- Renamed: the plugin's frankenstyle component changed from `tool_imageoptimize`
+  to **`tool_imageoptimizer`** (display name "Image optimizer"). The original
+  name clashed with an unrelated plugin already published on moodle.org. No
+  behavioural changes; the tracking table is now `tool_imageoptimizer_files`.
 
 ## v1.1.0 (2026-07-13)
 
@@ -36,14 +43,14 @@ Robustness and safety hardening following an external code review.
 ## v1.0.0 (2026-06-24)
 
 - Initial release.
-- Scheduled task (`tool_imageoptimize\task\process_images`, runs every 15
+- Scheduled task (`tool_imageoptimizer\task\process_images`, runs every 15
   minutes) finds image files in Moodle file storage above a configurable
   size threshold and resizes/recompresses them using Imagick (preferred,
   when installed) or GD (fallback).
 - Admin settings: enable toggle, minimum size threshold (KB), max
   width/height, compression quality, and target format (keep original,
   convert to JPEG, or convert to WEBP).
-- Tracking table (`tool_imageoptimize_files`) records which files have been
+- Tracking table (`tool_imageoptimizer_files`) records which files have been
   processed, to avoid reprocessing on subsequent task runs.
 - Privacy provider with full export/delete/userlist support. The tracking
   table has no `userid` column of its own; ownership is resolved by joining
@@ -59,7 +66,7 @@ Robustness and safety hardening following an external code review.
   and breaks the embedded image. The mimetype is set explicitly from the
   re-encoded content instead of being inferred from the (unchanged) file
   extension.
-- Removed the `tool/imageoptimize:manage` capability: it was declared but
+- Removed the `tool/imageoptimizer:manage` capability: it was declared but
   never enforced anywhere (admin settings are already gated by core's
   `moodle/site:config`), so keeping it implied access control that didn't
   actually exist.
