@@ -1,0 +1,22 @@
+# camp listing manifest — descriptive content for your plugin's page.
+# Edit freely and commit; camp ingests this file at each tagged release.
+# Schema: https://camp-registry.org/schema/listing.schema.json
+name: tool_imageoptimizer
+summary: 'An admin tool that automatically resizes and recompresses oversized images stored anywhere in Moodle''s file storage.'
+description: |
+  A scheduled task scans Moodle's file storage for image files above a
+  configurable size threshold and resizes/recompresses them, reducing disk
+  usage and improving page load times. Polling the files table sidesteps the
+  lack of a universal "file uploaded" event in Moodle's file API, so images
+  from every component are covered.
+labels:
+  # Required disclosure labels — pick all that apply (RFC §4.7):
+  #   fully-free | freemium | paid-service | external-account
+  #   donation-supported | commercial-support-available
+  - fully-free
+# screenshots:
+#   - path: .camp/screenshots/overview.png
+#     caption: Main view
+# links:
+#   docs: https://…
+#   issues: https://…
