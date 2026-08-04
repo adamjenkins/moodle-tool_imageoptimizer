@@ -2,6 +2,12 @@
 
 All notable changes to `tool_imageoptimizer` are documented here.
 
+## v1.1.2 (2026-08-04)
+
+- The full GPL-3.0 licence text is now included as `LICENSE` in the repository
+  root. The plugin's licence is unchanged (GPL-3.0-or-later, as declared in
+  `composer.json`); the file was simply missing.
+
 ## v1.1.1 (2026-07-13)
 
 - Renamed: the plugin's frankenstyle component changed from `tool_imageoptimize`
