@@ -2,6 +2,10 @@
 
 All notable changes to `tool_imageoptimizer` are documented here.
 
+## Unreleased
+
+- Declare Moodle 5.3 support.
+
 ## v1.1.2 (2026-08-04)
 
 - The full GPL-3.0 licence text is now included as `LICENSE` in the repository
