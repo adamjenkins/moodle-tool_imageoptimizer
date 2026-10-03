@@ -2,7 +2,7 @@
 
 All notable changes to `tool_imageoptimizer` are documented here.
 
-## Unreleased
+## v1.1.3 (2026-10-03)
 
 - Declare Moodle 5.3 support.
 
