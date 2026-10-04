@@ -29,6 +29,32 @@
  * @return bool
  */
 function xmldb_tool_imageoptimizer_upgrade($oldversion) {
-    // No upgrade steps yet.
+    global $DB;
+
+    require_once(__DIR__ . '/upgradelib.php');
+
+    $dbman = $DB->get_manager();
+
+    if ($oldversion < 2026100400) {
+        // Store the file owner on the tracking row itself, so privacy requests
+        // still reach the row after the underlying file has been deleted.
+        $table = new xmldb_table('tool_imageoptimizer_files');
+
+        $field = new xmldb_field('userid', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'itemid');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $index = new xmldb_index('userid', XMLDB_INDEX_NOTUNIQUE, ['userid']);
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+
+        // Remove rows whose file is already gone, then fill in the owner of the rest.
+        tool_imageoptimizer_upgrade_backfill_userids();
+
+        upgrade_plugin_savepoint(true, 2026100400, 'tool', 'imageoptimizer');
+    }
+
     return true;
 }

@@ -32,9 +32,9 @@ use core_privacy\local\request\userlist;
 use core_privacy\local\request\writer;
 
 /**
- * The tracking table records which files were processed, keyed by the file's
- * pathnamehash. Files in {files} carry a userid (the uploader), so a user's
- * processed-file records are reached by joining through that table.
+ * The tracking table records which files were processed. Each row stores the
+ * owner of the file (userid) itself, so a user's rows are found directly and
+ * stay reachable even after the underlying file has been deleted from {files}.
  */
 class provider implements
     \core_privacy\local\metadata\provider,
@@ -50,6 +50,7 @@ class provider implements
         $collection->add_database_table(
             'tool_imageoptimizer_files',
             [
+                'userid'        => 'privacy:metadata:tool_imageoptimizer_files:userid',
                 'pathnamehash'  => 'privacy:metadata:tool_imageoptimizer_files:pathnamehash',
                 'filename'      => 'privacy:metadata:tool_imageoptimizer_files:filename',
                 'originalsize'  => 'privacy:metadata:tool_imageoptimizer_files:originalsize',
@@ -73,8 +74,7 @@ class provider implements
 
         $sql = "SELECT o.contextid
                   FROM {tool_imageoptimizer_files} o
-                  JOIN {files} f ON f.pathnamehash = o.pathnamehash
-                 WHERE f.userid = :userid";
+                 WHERE o.userid = :userid";
         $contextlist->add_from_sql($sql, ['userid' => $userid]);
 
         return $contextlist;
@@ -88,10 +88,10 @@ class provider implements
     public static function get_users_in_context(userlist $userlist): void {
         $context = $userlist->get_context();
 
-        $sql = "SELECT f.userid
+        $sql = "SELECT o.userid
                   FROM {tool_imageoptimizer_files} o
-                  JOIN {files} f ON f.pathnamehash = o.pathnamehash
-                 WHERE o.contextid = :contextid";
+                 WHERE o.contextid = :contextid
+                   AND o.userid IS NOT NULL";
         $userlist->add_from_sql('userid', $sql, ['contextid' => $context->id]);
     }
 
@@ -106,17 +106,17 @@ class provider implements
         $userid = $contextlist->get_user()->id;
 
         foreach ($contextlist->get_contexts() as $context) {
-            $sql = "SELECT o.*
-                      FROM {tool_imageoptimizer_files} o
-                      JOIN {files} f ON f.pathnamehash = o.pathnamehash
-                     WHERE o.contextid = :contextid
-                       AND f.userid = :userid";
-            $records = $DB->get_records_sql($sql, ['contextid' => $context->id, 'userid' => $userid]);
+            $records = $DB->get_records(
+                'tool_imageoptimizer_files',
+                ['contextid' => $context->id, 'userid' => $userid],
+                'id ASC'
+            );
 
             $data = array_map(function ($record) {
                 $datetime = \core_privacy\local\request\transform::datetime($record->timeprocessed);
                 return [
                     'filename'      => $record->filename,
+                    'pathnamehash'  => $record->pathnamehash,
                     'originalsize'  => $record->originalsize,
                     'optimizedsize' => $record->optimizedsize,
                     'timeprocessed' => $datetime,
@@ -150,15 +150,7 @@ class provider implements
         $userid = $contextlist->get_user()->id;
 
         foreach ($contextlist->get_contexts() as $context) {
-            $sql = "SELECT o.id
-                      FROM {tool_imageoptimizer_files} o
-                      JOIN {files} f ON f.pathnamehash = o.pathnamehash
-                     WHERE o.contextid = :contextid
-                       AND f.userid = :userid";
-            $ids = $DB->get_fieldset_sql($sql, ['contextid' => $context->id, 'userid' => $userid]);
-            if (!empty($ids)) {
-                $DB->delete_records_list('tool_imageoptimizer_files', 'id', $ids);
-            }
+            $DB->delete_records('tool_imageoptimizer_files', ['contextid' => $context->id, 'userid' => $userid]);
         }
     }
 
@@ -177,14 +169,10 @@ class provider implements
         }
 
         [$insql, $inparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED);
-        $sql = "SELECT o.id
-                  FROM {tool_imageoptimizer_files} o
-                  JOIN {files} f ON f.pathnamehash = o.pathnamehash
-                 WHERE o.contextid = :contextid
-                   AND f.userid $insql";
-        $ids = $DB->get_fieldset_sql($sql, array_merge(['contextid' => $context->id], $inparams));
-        if (!empty($ids)) {
-            $DB->delete_records_list('tool_imageoptimizer_files', 'id', $ids);
-        }
+        $DB->delete_records_select(
+            'tool_imageoptimizer_files',
+            "contextid = :contextid AND userid $insql",
+            array_merge(['contextid' => $context->id], $inparams)
+        );
     }
 }

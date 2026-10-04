@@ -406,4 +406,135 @@ final class process_images_test extends \advanced_testcase {
         $task->execute();
         $this->assertSame($countafterfirst, $DB->count_records('tool_imageoptimizer_files'));
     }
+
+    public function test_execute_records_owner_and_keeps_file_ownership(): void {
+        global $DB;
+        $this->resetAfterTest();
+
+        set_config('enabled', 1, 'tool_imageoptimizer');
+        set_config('minsizekb', 1, 'tool_imageoptimizer');
+        set_config('maxwidth', 1920, 'tool_imageoptimizer');
+        set_config('maxheight', 1080, 'tool_imageoptimizer');
+        set_config('quality', 80, 'tool_imageoptimizer');
+        set_config('targetformat', 'jpeg', 'tool_imageoptimizer');
+
+        $user = self::getDataGenerator()->create_user();
+        $fs = get_file_storage();
+        $context = \context_user::instance($user->id);
+        $filerecord = [
+            'contextid' => $context->id,
+            'component' => 'tool_imageoptimizer_test',
+            'filearea'  => 'test',
+            'itemid'    => 0,
+            'filepath'  => '/',
+            'filename'  => 'photo.png',
+            'userid'    => $user->id,
+            'author'    => 'Jane Author',
+            'license'   => 'cc-4.0',
+            'source'    => 'photo.png',
+            'timecreated' => 1000000000,
+        ];
+        $original = $fs->create_file_from_string($filerecord, $this->make_png(2000, 1500));
+        $originalsize = (int) $original->get_filesize();
+
+        $task = new process_images();
+        $task->execute();
+
+        $optimized = $fs->get_file($context->id, 'tool_imageoptimizer_test', 'test', 0, '/', 'photo.png');
+        $this->assertNotFalse($optimized);
+        $this->assertLessThan($originalsize, (int) $optimized->get_filesize());
+
+        // The replacement keeps the original owner and attribution.
+        $this->assertEquals($user->id, $optimized->get_userid());
+        $this->assertSame('Jane Author', $optimized->get_author());
+        $this->assertSame('cc-4.0', $optimized->get_license());
+        $this->assertSame('photo.png', $optimized->get_source());
+        $this->assertEquals(1000000000, $optimized->get_timecreated());
+
+        // The tracking row stores the owner, for the privacy provider.
+        $tracking = $DB->get_record('tool_imageoptimizer_files', ['pathnamehash' => $optimized->get_pathnamehash()]);
+        $this->assertNotFalse($tracking);
+        $this->assertEquals($user->id, $tracking->userid);
+    }
+
+    public function test_execute_records_owner_of_files_that_do_not_shrink(): void {
+        global $DB;
+        $this->resetAfterTest();
+
+        set_config('enabled', 1, 'tool_imageoptimizer');
+        set_config('minsizekb', 0, 'tool_imageoptimizer');
+        set_config('maxwidth', 4000, 'tool_imageoptimizer');
+        set_config('maxheight', 4000, 'tool_imageoptimizer');
+        set_config('quality', 80, 'tool_imageoptimizer');
+        set_config('targetformat', 'jpeg', 'tool_imageoptimizer');
+
+        $user = self::getDataGenerator()->create_user();
+        $fs = get_file_storage();
+        $context = \context_user::instance($user->id);
+        $original = $fs->create_file_from_string([
+            'contextid' => $context->id,
+            'component' => 'tool_imageoptimizer_test',
+            'filearea'  => 'test',
+            'itemid'    => 0,
+            'filepath'  => '/',
+            'filename'  => 'solid.png',
+            'userid'    => $user->id,
+        ], $this->make_solid_png(60, 60));
+
+        $task = new process_images();
+        $task->execute();
+
+        $tracking = $DB->get_record('tool_imageoptimizer_files', ['pathnamehash' => $original->get_pathnamehash()]);
+        $this->assertNotFalse($tracking);
+        $this->assertEquals($user->id, $tracking->userid);
+    }
+
+    public function test_execute_purges_tracking_rows_of_deleted_files(): void {
+        global $DB;
+        $this->resetAfterTest();
+
+        // Housekeeping must run even while optimization itself is disabled.
+        set_config('enabled', 0, 'tool_imageoptimizer');
+
+        $user = self::getDataGenerator()->create_user();
+        $context = \context_user::instance($user->id);
+        $fs = get_file_storage();
+        $base = [
+            'contextid' => $context->id,
+            'component' => 'tool_imageoptimizer_test',
+            'filearea'  => 'test',
+            'itemid'    => 0,
+            'filepath'  => '/',
+            'userid'    => $user->id,
+        ];
+        $kept = $fs->create_file_from_string($base + ['filename' => 'kept.jpg'], 'kept bytes');
+        $gone = $fs->create_file_from_string($base + ['filename' => 'IMG_john_smith.jpg'], 'gone bytes');
+
+        $ids = [];
+        foreach ([$kept, $gone] as $file) {
+            $ids[$file->get_filename()] = $DB->insert_record('tool_imageoptimizer_files', (object) [
+                'pathnamehash'  => $file->get_pathnamehash(),
+                'contextid'     => $context->id,
+                'component'     => 'tool_imageoptimizer_test',
+                'filearea'      => 'test',
+                'itemid'        => 0,
+                'userid'        => $user->id,
+                'filename'      => $file->get_filename(),
+                'mimetype'      => 'image/jpeg',
+                'originalsize'  => 1000,
+                'optimizedsize' => 100,
+                'timeprocessed' => time(),
+            ]);
+        }
+
+        // The user deletes one file; core removes its {files} row only.
+        $gone->delete();
+        $this->assertTrue($DB->record_exists('tool_imageoptimizer_files', ['id' => $ids['IMG_john_smith.jpg']]));
+
+        $task = new process_images();
+        $task->execute();
+
+        $this->assertFalse($DB->record_exists('tool_imageoptimizer_files', ['id' => $ids['IMG_john_smith.jpg']]));
+        $this->assertTrue($DB->record_exists('tool_imageoptimizer_files', ['id' => $ids['kept.jpg']]));
+    }
 }

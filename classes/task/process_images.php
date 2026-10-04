@@ -57,6 +57,11 @@ class process_images extends \core\task\scheduled_task {
     public function execute() {
         global $DB;
 
+        // Housekeeping runs even when optimization is disabled: a tracking row
+        // whose file has been deleted keeps a user-chosen filename for no
+        // purpose, so it is removed as soon as possible.
+        self::purge_orphaned_records();
+
         if (!get_config('tool_imageoptimizer', 'enabled')) {
             return;
         }
@@ -98,6 +103,32 @@ class process_images extends \core\task\scheduled_task {
                     $file->get_id() . ': ' . $e->getMessage());
             }
         }
+    }
+
+    /**
+     * Delete tracking rows whose file no longer exists in the file storage.
+     *
+     * A file can be deleted at any time (by its owner, a course reset, a
+     * submission purge, ...), and nothing tells this plugin. Without this
+     * clean-up the row would keep the file's name indefinitely, and its
+     * pathnamehash would stop a later file at the same path from ever being
+     * selected for optimization.
+     *
+     * @return int number of rows deleted
+     */
+    public static function purge_orphaned_records(): int {
+        global $DB;
+
+        $ids = $DB->get_fieldset_sql(
+            "SELECT o.id
+               FROM {tool_imageoptimizer_files} o
+          LEFT JOIN {files} f ON f.pathnamehash = o.pathnamehash
+              WHERE f.id IS NULL"
+        );
+        foreach (array_chunk($ids, 1000) as $chunk) {
+            $DB->delete_records_list('tool_imageoptimizer_files', 'id', $chunk);
+        }
+        return count($ids);
     }
 
     /**
@@ -161,6 +192,15 @@ class process_images extends \core\task\scheduled_task {
             'filepath'  => $file->get_filepath(),
             'filename'  => $file->get_filename(),
             'mimetype'  => $format['mimetype'],
+            // Carry the file's ownership and attribution over to the
+            // replacement; leaving them out would silently make the file
+            // ownerless (no userid, author, licence or source).
+            'userid'      => $file->get_userid(),
+            'author'      => $file->get_author(),
+            'license'     => $file->get_license(),
+            'source'      => $file->get_source(),
+            'sortorder'   => $file->get_sortorder(),
+            'timecreated' => $file->get_timecreated(),
         ];
 
         $fs = get_file_storage();
@@ -191,7 +231,7 @@ class process_images extends \core\task\scheduled_task {
             throw $e;
         }
 
-        $this->record_processed($newfile, $originalsize, strlen($newcontent));
+        $this->record_processed($newfile, $originalsize, strlen($newcontent), $file->get_userid());
     }
 
     /**
@@ -201,15 +241,26 @@ class process_images extends \core\task\scheduled_task {
      * when it was examined but left untouched (original size for both), so that
      * every eligible file is remembered and is not reconsidered on later runs.
      * The tracking row is keyed by the file's pathnamehash, which is what the
-     * selection query and the privacy provider join on.
+     * selection query joins on. It also stores the file owner, so the privacy
+     * provider can find the row without the {files} row still existing.
      *
      * @param \stored_file $file the stored file as it exists after processing
      * @param int $originalsize size in bytes before processing
      * @param int $optimizedsize size in bytes after processing (equal to the
      *                            original when the file was left unchanged)
+     * @param int|null $userid owner of the original file; defaults to the owner of $file
      */
-    private function record_processed(\stored_file $file, int $originalsize, int $optimizedsize): void {
+    private function record_processed(
+        \stored_file $file,
+        int $originalsize,
+        int $optimizedsize,
+        ?int $userid = null
+    ): void {
         global $DB;
+
+        if ($userid === null) {
+            $userid = $file->get_userid();
+        }
 
         $DB->insert_record('tool_imageoptimizer_files', (object) [
             'pathnamehash'  => $file->get_pathnamehash(),
@@ -217,6 +268,7 @@ class process_images extends \core\task\scheduled_task {
             'component'     => $file->get_component(),
             'filearea'      => $file->get_filearea(),
             'itemid'        => $file->get_itemid(),
+            'userid'        => $userid ? (int) $userid : null,
             'filename'      => $file->get_filename(),
             'mimetype'      => $file->get_mimetype(),
             'originalsize'  => $originalsize,

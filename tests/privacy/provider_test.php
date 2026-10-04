@@ -41,7 +41,7 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
      * @param \stdClass $user
      * @param \context $context
      * @param string $filename
-     * @return \stdClass the inserted tracking record
+     * @return \stdClass the inserted tracking record, with the stored file in ->storedfile
      */
     private function create_tracked_file(\stdClass $user, \context $context, string $filename = 'photo.jpg'): \stdClass {
         global $DB;
@@ -64,6 +64,7 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
             'component'     => 'tool_imageoptimizer_test',
             'filearea'      => 'test',
             'itemid'        => 0,
+            'userid'        => $user->id,
             'filename'      => $filename,
             'mimetype'      => 'image/jpeg',
             'originalsize'  => 1000,
@@ -71,6 +72,7 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
             'timeprocessed' => time(),
         ];
         $tracking->id = $DB->insert_record('tool_imageoptimizer_files', $tracking);
+        $tracking->storedfile = $file;
         return $tracking;
     }
 
@@ -78,6 +80,13 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
         $collection = new \core_privacy\local\metadata\collection('tool_imageoptimizer');
         $result = provider::get_metadata($collection);
         $this->assertCount(1, $result->get_collection());
+
+        $table = $result->get_collection()[0];
+        $this->assertSame('tool_imageoptimizer_files', $table->get_name());
+        $fields = array_keys($table->get_privacy_fields());
+        $this->assertContains('userid', $fields);
+        $this->assertContains('pathnamehash', $fields);
+        $this->assertContains('filename', $fields);
     }
 
     public function test_get_contexts_for_userid(): void {
@@ -119,7 +128,7 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
 
         $user = self::getDataGenerator()->create_user();
         $context = \context_user::instance($user->id);
-        $this->create_tracked_file($user, $context, 'photo.jpg');
+        $tracking = $this->create_tracked_file($user, $context, 'photo.jpg');
 
         $this->setUser($user);
         $approved = new approved_contextlist($user, 'tool_imageoptimizer', [$context->id]);
@@ -129,6 +138,11 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
         $this->assertNotEmpty($exported);
         $this->assertCount(1, $exported->files);
         $this->assertSame('photo.jpg', $exported->files[0]['filename']);
+        // Every stored field declared in get_metadata() is exported.
+        $this->assertSame($tracking->pathnamehash, $exported->files[0]['pathnamehash']);
+        $this->assertEquals(1000, $exported->files[0]['originalsize']);
+        $this->assertEquals(100, $exported->files[0]['optimizedsize']);
+        $this->assertArrayHasKey('timeprocessed', $exported->files[0]);
     }
 
     public function test_delete_data_for_all_users_in_context(): void {
@@ -179,6 +193,72 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
 
         $approved = new approved_userlist($context, 'tool_imageoptimizer', [$user1->id]);
         provider::delete_data_for_users($approved);
+
+        $this->assertFalse($DB->record_exists('tool_imageoptimizer_files', ['id' => $tracking1->id]));
+        $this->assertTrue($DB->record_exists('tool_imageoptimizer_files', ['id' => $tracking2->id]));
+    }
+
+    public function test_rows_remain_reachable_after_file_is_deleted(): void {
+        $this->resetAfterTest();
+
+        $user1 = self::getDataGenerator()->create_user();
+        $user2 = self::getDataGenerator()->create_user();
+        $context = \context_user::instance($user1->id);
+
+        $tracking = $this->create_tracked_file($user1, $context, 'IMG_holiday_john_smith.jpg');
+        $this->create_tracked_file($user2, \context_user::instance($user2->id), 'other.jpg');
+
+        // The user deletes the file: the {files} row disappears, the tracking row stays
+        // until the next task run.
+        $tracking->storedfile->delete();
+        $this->assertFalse(get_file_storage()->get_file_by_hash($tracking->pathnamehash));
+
+        $contextids = array_map(fn($c) => $c->id, provider::get_contexts_for_userid($user1->id)->get_contexts());
+        $this->assertContains($context->id, $contextids);
+
+        $userlist = new userlist($context, 'tool_imageoptimizer');
+        provider::get_users_in_context($userlist);
+        $this->assertEqualsCanonicalizing([$user1->id], $userlist->get_userids());
+
+        $this->setUser($user1);
+        provider::export_user_data(new approved_contextlist($user1, 'tool_imageoptimizer', [$context->id]));
+        $exported = writer::with_context($context)->get_data(['tool_imageoptimizer']);
+        $this->assertNotEmpty($exported);
+        $this->assertSame('IMG_holiday_john_smith.jpg', $exported->files[0]['filename']);
+    }
+
+    public function test_delete_data_for_user_after_file_is_deleted(): void {
+        global $DB;
+        $this->resetAfterTest();
+
+        $user1 = self::getDataGenerator()->create_user();
+        $user2 = self::getDataGenerator()->create_user();
+        $context = \context_system::instance();
+
+        $tracking1 = $this->create_tracked_file($user1, $context, 'a.jpg');
+        $tracking2 = $this->create_tracked_file($user2, $context, 'b.jpg');
+        $tracking1->storedfile->delete();
+
+        provider::delete_data_for_user(new approved_contextlist($user1, 'tool_imageoptimizer', [$context->id]));
+
+        $this->assertFalse($DB->record_exists('tool_imageoptimizer_files', ['id' => $tracking1->id]));
+        $this->assertTrue($DB->record_exists('tool_imageoptimizer_files', ['id' => $tracking2->id]));
+    }
+
+    public function test_delete_data_for_users_after_file_is_deleted(): void {
+        global $DB;
+        $this->resetAfterTest();
+
+        $user1 = self::getDataGenerator()->create_user();
+        $user2 = self::getDataGenerator()->create_user();
+        $context = \context_system::instance();
+
+        $tracking1 = $this->create_tracked_file($user1, $context, 'a.jpg');
+        $tracking2 = $this->create_tracked_file($user2, $context, 'b.jpg');
+        $tracking1->storedfile->delete();
+        $tracking2->storedfile->delete();
+
+        provider::delete_data_for_users(new approved_userlist($context, 'tool_imageoptimizer', [$user1->id]));
 
         $this->assertFalse($DB->record_exists('tool_imageoptimizer_files', ['id' => $tracking1->id]));
         $this->assertTrue($DB->record_exists('tool_imageoptimizer_files', ['id' => $tracking2->id]));

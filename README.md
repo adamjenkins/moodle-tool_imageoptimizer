@@ -17,7 +17,8 @@ above a configurable size threshold that haven't been processed yet, and:
 2. Recompresses it at the configured quality, optionally converting to a
    different format (JPEG or WEBP), or keeping the original format.
 3. Replaces the stored file's content in place — **the filename is never
-   changed**, only the bytes and the mimetype.
+   changed**, only the bytes and the mimetype. The file keeps its owner,
+   author, licence and source.
 4. Records the result in the `tool_imageoptimizer_files` tracking table so
    the same file isn't reprocessed on the next run.
 
@@ -66,11 +67,12 @@ Site administration → Plugins → Admin tools → Image optimizer:
 
 ## Privacy
 
-This plugin stores metadata about which files it has processed (filename,
-original/optimized size, timestamp) in `tool_imageoptimizer_files`. That
-table has no `userid` column of its own — ownership for GDPR export/delete
-requests is resolved by joining against the core `files` table via the
-file's content hash. See `classes/privacy/provider.php`.
+This plugin stores metadata about which files it has processed (file owner,
+filename, path hash, original/optimized size, timestamp) in
+`tool_imageoptimizer_files`. Each record stores the `userid` of the file's
+owner, so GDPR export and delete requests reach it directly, even after the
+file itself has been deleted. The scheduled task also removes records whose
+file no longer exists. See `classes/privacy/provider.php`.
 
 ## Security notes
 

@@ -2,6 +2,21 @@
 
 All notable changes to `tool_imageoptimizer` are documented here.
 
+## [Unreleased]
+
+- Fixed (privacy): the processed-file tracking table now stores the owner of
+  each file (new `userid` column, filled in for existing rows on upgrade). The
+  privacy provider finds a user's records through that column instead of a join
+  to the core `files` table, so export and deletion requests still reach a
+  record after its image has been deleted.
+- Fixed (privacy): the data export now includes `pathnamehash`, which the
+  privacy metadata declares.
+- Fixed: the scheduled task now removes tracking records whose file no longer
+  exists (also on upgrade). Such a record kept the file name indefinitely and
+  stopped a new file at the same path from being optimized.
+- Fixed: an optimized image no longer loses its owner, author, licence, source
+  and creation time when its content is replaced.
+
 ## v1.1.3 (2026-10-03)
 
 - Declare Moodle 5.3 support.

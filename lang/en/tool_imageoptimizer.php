@@ -34,6 +34,7 @@ $string['privacy:metadata:tool_imageoptimizer_files:optimizedsize'] = 'The size 
 $string['privacy:metadata:tool_imageoptimizer_files:originalsize'] = 'The size of the file before optimization.';
 $string['privacy:metadata:tool_imageoptimizer_files:pathnamehash'] = 'The path hash identifying the processed file within Moodle\'s file storage.';
 $string['privacy:metadata:tool_imageoptimizer_files:timeprocessed'] = 'The time the file was processed.';
+$string['privacy:metadata:tool_imageoptimizer_files:userid'] = 'The ID of the user who owned the file when it was processed.';
 $string['settings:enabled'] = 'Enable image optimization';
 $string['settings:enabled_desc'] = 'When enabled, the scheduled task will optimize eligible image files.';
 $string['settings:maxheight'] = 'Maximum height (px)';
