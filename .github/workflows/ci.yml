@@ -5,14 +5,11 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-22.04
-    # moodle.git main rows are experimental (non-blocking): a failure there is
-    # reported but does not fail the workflow.
-    continue-on-error: ${{ matrix.experimental == true }}
 
     services:
       postgres:
         # Moodle 5.2 requires PostgreSQL 16+ (5.1: 15+, 5.0: 14+), per admin/environment.xml.
-        # main (5.3) needs PostgreSQL 17+ (environment.xml 5.3 block); its rows override via matrix.pgsql-image.
+        # MOODLE_503_STABLE (5.3) needs PostgreSQL 17+ (environment.xml 5.3 block); its rows override via matrix.pgsql-image.
         image: ${{ matrix.pgsql-image || 'postgres:16' }}
         env:
           POSTGRES_USER: 'postgres'
@@ -23,7 +20,7 @@ jobs:
 
       mariadb:
         # Moodle 5.0, 5.1 and 5.2 all require MariaDB 10.11+, per admin/environment.xml.
-        # main (5.3) needs MariaDB 11.4+ (environment.xml 5.3 block); its rows override via matrix.mariadb-image.
+        # MOODLE_503_STABLE (5.3) needs MariaDB 11.4+ (environment.xml 5.3 block); its rows override via matrix.mariadb-image.
         image: ${{ matrix.mariadb-image || 'mariadb:10.11' }}
         env:
           MYSQL_USER: 'root'
@@ -48,19 +45,17 @@ jobs:
           - php: '8.2'
             moodle-branch: 'MOODLE_502_STABLE'
         include:
-          # moodle.git main (= 5.3beta): PHP 8.3-8.4, MariaDB 11.4+, PostgreSQL 17+.
-          # Non-blocking (experimental) by owner decision; "main" is not an
-          # original moodle-branch value, so each entry is a new job.
+          # MOODLE_503_STABLE (Moodle 5.3): PHP 8.3-8.4, MariaDB 11.4+, PostgreSQL 17+,
+          # per its environment.xml 5.3 block. Blocking like the other branches;
+          # "MOODLE_503_STABLE" is not an original moodle-branch value, so each entry is a new job.
           - php: '8.4'
-            moodle-branch: 'main'
+            moodle-branch: 'MOODLE_503_STABLE'
             database: pgsql
-            experimental: true
             pgsql-image: 'postgres:17'
             mariadb-image: 'mariadb:11.4'
           - php: '8.3'
-            moodle-branch: 'main'
+            moodle-branch: 'MOODLE_503_STABLE'
             database: mariadb
-            experimental: true
             pgsql-image: 'postgres:17'
             mariadb-image: 'mariadb:11.4'
 
