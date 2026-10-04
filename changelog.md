@@ -2,19 +2,34 @@
 
 All notable changes to `tool_imageoptimizer` are documented here.
 
-## [Unreleased]
+## [1.1.4] - 2026-10-04
 
-- Fixed (privacy): the processed-file tracking table now stores the owner of
+### Added
+
+- `.github/workflows/camp-release.yml`: tagged releases are published to the
+  camp plugin registry.
+
+### Changed
+
+- CI tests `MOODLE_503_STABLE` (blocking rows: PHP 8.3-8.4, PostgreSQL 17,
+  MariaDB 11.4) instead of the experimental moodle.git `main` rows, now that
+  Moodle 5.3 is released.
+- `composer.json`: `moodle/moodle` constraint is now `^5.0` (was `>=5.0 <5.4`),
+  so later 5.x releases are not excluded.
+
+### Fixed
+
+- Privacy: the processed-file tracking table now stores the owner of
   each file (new `userid` column, filled in for existing rows on upgrade). The
   privacy provider finds a user's records through that column instead of a join
   to the core `files` table, so export and deletion requests still reach a
   record after its image has been deleted.
-- Fixed (privacy): the data export now includes `pathnamehash`, which the
+- Privacy: the data export now includes `pathnamehash`, which the
   privacy metadata declares.
-- Fixed: the scheduled task now removes tracking records whose file no longer
+- The scheduled task now removes tracking records whose file no longer
   exists (also on upgrade). Such a record kept the file name indefinitely and
   stopped a new file at the same path from being optimized.
-- Fixed: an optimized image no longer loses its owner, author, licence, source
+- An optimized image no longer loses its owner, author, licence, source
   and creation time when its content is replaced.
 
 ## v1.1.3 (2026-10-03)
