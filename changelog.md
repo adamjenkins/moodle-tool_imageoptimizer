@@ -2,6 +2,45 @@
 
 All notable changes to `tool_imageoptimizer` are documented here.
 
+## [1.1.5] - 2026-11-10
+
+### Added
+
+- `pix/icon.svg`, shown on the admin plugins overview.
+- `process_images::is_multi_frame()`: detects animated GIF (more than one graphic control
+  extension or image descriptor), APNG (`acTL` chunk) and animated WebP (`ANIM` chunk) from
+  the raw bytes, with or without Imagick.
+- `process_images::set_imagick_limits()`: sets Imagick area, width, height, memory, map, disk
+  and time resource limits before decoding, skipping constants or limits the installed build
+  lacks.
+- Camp listing screenshot and caption (`.camp/screenshots/01-settings.png`).
+- New tests in `tests/task/process_images_test.php` for each skip case.
+
+### Changed
+
+- The task selects only `image/jpeg`, `image/png`, `image/gif` and `image/webp`
+  (`ALLOWED_MIMETYPES`, via `get_in_or_equal()`) instead of `image/%`, and the sniffed type
+  from `getimagesizefromstring()` must be in `ALLOWED_IMAGETYPES` before anything is decoded.
+- With Imagick, the decoder is pinned with `setFormat()` to the sniffed type, and the image is
+  pinged first so multi-frame input is refused before a full decode.
+- README: correct default (Off) for the enable setting, requirement Moodle 5.0+ (supported up
+  to 5.3), a warning that originals are replaced without a backup, and the new format and
+  decoder restrictions.
+
+### Fixed
+
+- Animated GIF/APNG/WebP files are recorded and left as they are, instead of being flattened to
+  their first frame.
+- Aliases (`referencefileid` set) are no longer selected, and files that aliases reference
+  (`get_references_by_storedfile()`) are recorded and skipped, so replacement never detaches
+  aliases into standalone copies.
+
+### Security
+
+- Only the JPEG, PNG, GIF and WebP decoders can be reached, whatever a file's stored mimetype
+  claims, and ImageMagick's resource use is bounded by the plugin rather than by the server's
+  `policy.xml`.
+
 ## [1.1.4] - 2026-10-04
 
 ### Added

@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_imageoptimizer';
-$plugin->version   = 2026100401;
+$plugin->version   = 2026111000;
 $plugin->requires  = 2025041400;
 $plugin->supported = [500, 503];
-$plugin->release   = '1.1.4';
+$plugin->release   = '1.1.5';
 $plugin->maturity  = MATURITY_STABLE;
