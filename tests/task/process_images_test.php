@@ -537,4 +537,180 @@ final class process_images_test extends \advanced_testcase {
         $this->assertFalse($DB->record_exists('tool_imageoptimizer_files', ['id' => $ids['IMG_john_smith.jpg']]));
         $this->assertTrue($DB->record_exists('tool_imageoptimizer_files', ['id' => $ids['kept.jpg']]));
     }
+
+    /**
+     * Build a GIF89a with the given number of 1x1 frames.
+     *
+     * @param int $frames
+     * @return string raw GIF bytes
+     */
+    private function make_gif(int $frames): string {
+        // Header, logical screen descriptor (1x1, 2-colour global table), table.
+        $gif = "GIF89a" . "\x01\x00\x01\x00\x80\x00\x00" . "\x00\x00\x00\xff\xff\xff";
+        for ($i = 0; $i < $frames; $i++) {
+            // Graphic control extension (10/100 s delay), image descriptor,
+            // LZW minimum code size 2 and one data sub-block.
+            $gif .= "\x21\xF9\x04\x00\x0A\x00\x00\x00";
+            $gif .= "\x2C\x00\x00\x00\x00\x01\x00\x01\x00\x00";
+            $gif .= "\x02\x02\x44\x01\x00";
+        }
+        return $gif . "\x3B";
+    }
+
+    /**
+     * Base file record used by the tests below.
+     *
+     * @param string $filename
+     * @param string $mimetype
+     * @return array
+     */
+    private function file_record(string $filename, string $mimetype): array {
+        return [
+            'contextid' => \context_system::instance()->id,
+            'component' => 'tool_imageoptimizer_test',
+            'filearea'  => 'test',
+            'itemid'    => 0,
+            'filepath'  => '/',
+            'filename'  => $filename,
+            'mimetype'  => $mimetype,
+        ];
+    }
+
+    public function test_is_multi_frame_detects_animated_gif(): void {
+        $this->assertTrue(process_images::is_multi_frame($this->make_gif(2), IMAGETYPE_GIF));
+        $this->assertFalse(process_images::is_multi_frame($this->make_gif(1), IMAGETYPE_GIF));
+    }
+
+    public function test_is_multi_frame_detects_apng_and_animated_webp(): void {
+        $this->assertFalse(process_images::is_multi_frame($this->make_solid_png(10, 10), IMAGETYPE_PNG));
+        $this->assertTrue(process_images::is_multi_frame(
+            "\x89PNG\r\n\x1a\n" . pack('N', 8) . 'acTL' . pack('NN', 2, 0),
+            IMAGETYPE_PNG
+        ));
+        $this->assertTrue(process_images::is_multi_frame('RIFF....WEBPVP8X....ANIM....', IMAGETYPE_WEBP));
+        $this->assertFalse(process_images::is_multi_frame('RIFF....WEBPVP8 ....', IMAGETYPE_WEBP));
+    }
+
+    public function test_execute_leaves_animated_gif_unchanged(): void {
+        global $DB;
+        $this->resetAfterTest();
+
+        set_config('enabled', 1, 'tool_imageoptimizer');
+        set_config('minsizekb', 0, 'tool_imageoptimizer');
+        set_config('targetformat', 'jpeg', 'tool_imageoptimizer');
+
+        $fs = get_file_storage();
+        $content = $this->make_gif(2);
+        $original = $fs->create_file_from_string($this->file_record('anim.gif', 'image/gif'), $content);
+        $contenthash = $original->get_contenthash();
+
+        $task = new process_images();
+        $task->execute();
+
+        // Re-encoding would keep only one frame, so the animation must be left
+        // exactly as uploaded...
+        $after = $fs->get_file($original->get_contextid(), 'tool_imageoptimizer_test', 'test', 0, '/', 'anim.gif');
+        $this->assertNotFalse($after);
+        $this->assertSame($contenthash, $after->get_contenthash());
+        $this->assertSame('image/gif', $after->get_mimetype());
+
+        // ...and recorded as processed so it is not re-read every run.
+        $tracking = $DB->get_record('tool_imageoptimizer_files', ['pathnamehash' => $after->get_pathnamehash()]);
+        $this->assertNotFalse($tracking);
+        $this->assertSame((int) $tracking->originalsize, (int) $tracking->optimizedsize);
+    }
+
+    public function test_execute_ignores_formats_outside_the_allowlist(): void {
+        global $DB;
+        $this->resetAfterTest();
+
+        set_config('enabled', 1, 'tool_imageoptimizer');
+        set_config('minsizekb', 0, 'tool_imageoptimizer');
+        set_config('targetformat', 'jpeg', 'tool_imageoptimizer');
+
+        $image = imagecreatetruecolor(400, 300);
+        ob_start();
+        imagebmp($image, null, false);
+        $bmp = ob_get_clean();
+        imagedestroy($image);
+
+        $fs = get_file_storage();
+        // A BMP stored as such is never selected.
+        $stored = $fs->create_file_from_string($this->file_record('picture.bmp', 'image/bmp'), $bmp);
+        // BMP bytes behind an allowed mimetype are sniffed, recorded and skipped.
+        $disguised = $fs->create_file_from_string($this->file_record('picture.png', 'image/png'), $bmp);
+
+        $task = new process_images();
+        $task->execute();
+
+        $this->assertFalse($DB->record_exists('tool_imageoptimizer_files', ['pathnamehash' => $stored->get_pathnamehash()]));
+        $after = $fs->get_file($stored->get_contextid(), 'tool_imageoptimizer_test', 'test', 0, '/', 'picture.bmp');
+        $this->assertSame($stored->get_contenthash(), $after->get_contenthash());
+
+        $after = $fs->get_file($disguised->get_contextid(), 'tool_imageoptimizer_test', 'test', 0, '/', 'picture.png');
+        $this->assertSame($disguised->get_contenthash(), $after->get_contenthash());
+        $tracking = $DB->get_record('tool_imageoptimizer_files', ['pathnamehash' => $disguised->get_pathnamehash()]);
+        $this->assertNotFalse($tracking);
+        $this->assertSame((int) $tracking->originalsize, (int) $tracking->optimizedsize);
+    }
+
+    public function test_execute_leaves_aliases_and_their_targets_intact(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/repository/lib.php');
+        $this->resetAfterTest();
+
+        set_config('enabled', 1, 'tool_imageoptimizer');
+        set_config('minsizekb', 1, 'tool_imageoptimizer');
+        set_config('maxwidth', 1920, 'tool_imageoptimizer');
+        set_config('maxheight', 1080, 'tool_imageoptimizer');
+        set_config('targetformat', 'jpeg', 'tool_imageoptimizer');
+
+        $user = self::getDataGenerator()->create_user();
+        $this->setUser($user);
+        $usercontext = \context_user::instance($user->id);
+        $syscontext = \context_system::instance();
+
+        // Same set-up as core's file_storage_test::test_create_file_from_reference().
+        $guestroleid = $DB->get_field('role', 'id', ['shortname' => 'guest']);
+        assign_capability('repository/user:view', CAP_ALLOW, $guestroleid, $syscontext->id, true);
+        $repos = \repository::get_instances(['type' => 'user']);
+        $userrepository = reset($repos);
+        $this->assertInstanceOf(\repository::class, $userrepository);
+
+        $fs = get_file_storage();
+        $targetrecord = [
+            'contextid' => $usercontext->id,
+            'component' => 'user',
+            'filearea'  => 'private',
+            'itemid'    => 0,
+            'filepath'  => '/',
+            'filename'  => 'photo.png',
+            'userid'    => $user->id,
+        ];
+        $target = $fs->create_file_from_string($targetrecord, $this->make_png(2000, 1500));
+        $alias = $fs->create_file_from_reference([
+            'contextid' => $syscontext->id,
+            'component' => 'tool_imageoptimizer_test',
+            'filearea'  => 'test',
+            'itemid'    => 0,
+            'filepath'  => '/',
+            'filename'  => 'photo.png',
+        ], $userrepository->id, $fs->pack_reference($targetrecord));
+        $this->assertEquals(1, $fs->get_references_count_by_storedfile($target));
+
+        $task = new process_images();
+        $task->execute();
+
+        // The target has an alias, so it is recorded but not replaced...
+        $targetafter = $fs->get_file($usercontext->id, 'user', 'private', 0, '/', 'photo.png');
+        $this->assertSame($target->get_contenthash(), $targetafter->get_contenthash());
+        $this->assertTrue($DB->record_exists('tool_imageoptimizer_files', ['pathnamehash' => $target->get_pathnamehash()]));
+
+        // ...the alias is never selected, and is still an alias.
+        $aliasafter = $fs->get_file($syscontext->id, 'tool_imageoptimizer_test', 'test', 0, '/', 'photo.png');
+        $this->assertTrue($aliasafter->is_external_file());
+        $this->assertEquals($alias->get_id(), $aliasafter->get_id());
+        $this->assertFalse($DB->record_exists('tool_imageoptimizer_files', ['pathnamehash' => $alias->get_pathnamehash()]));
+        $this->assertEquals(1, $fs->get_references_count_by_storedfile($targetafter));
+    }
 }

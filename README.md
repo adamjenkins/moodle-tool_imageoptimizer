@@ -25,6 +25,18 @@ above a configurable size threshold that haven't been processed yet, and:
 Imagick is used when the extension is available (better quality/format
 support); otherwise it falls back to GD.
 
+Only JPEG, PNG, GIF and WebP files are processed, checked both on the stored
+mimetype and on the file's actual bytes. Animated images (animated GIF, APNG,
+animated WebP) are left untouched, because re-encoding would keep only the
+first frame. Aliases, and files that aliases point at, are also left
+untouched, so those links are never turned into stale copies. Skipped files
+are still recorded, so they are not re-examined on every run.
+
+> **Warning:** optimization replaces the original file in every component
+> (course files, forum posts, submissions, user files) and **keeps no
+> backup**. The task ships disabled; enable it only once you accept that.
+> Uninstalling the plugin does not restore the originals.
+
 ## Why the filename never changes
 
 Many Moodle components (labels, pages, course summaries, forum posts, etc.)
@@ -52,7 +64,7 @@ Site administration → Plugins → Admin tools → Image optimizer:
 
 | Setting | Description | Default |
 |---|---|---|
-| Enable image optimization | Master on/off switch for the scheduled task | On |
+| Enable image optimization | Master on/off switch for the scheduled task | Off |
 | Minimum file size (KB) | Only images larger than this are processed | 500 |
 | Maximum width / height (px) | Images larger than this are resized down, preserving aspect ratio | 1920 / 1080 |
 | Compression quality (1-100) | Used when re-encoding lossy formats (JPEG/WEBP) | 80 |
@@ -60,7 +72,7 @@ Site administration → Plugins → Admin tools → Image optimizer:
 
 ## Requirements
 
-- Moodle 4.5+ (`$plugin->requires = 2024100700`)
+- Moodle 5.0+ (`$plugin->requires = 2025041400`), supported up to 5.3
 - PHP's GD extension (always available in a standard Moodle install)
 - Imagick extension (optional, used automatically when present for better
   quality and broader format support)
@@ -84,6 +96,12 @@ file no longer exists. See `classes/privacy/provider.php`.
   memory proportional to declared pixel dimensions rather than file size on
   disk, so without this check a small, maliciously crafted file could
   trigger a decompression-bomb-style memory exhaustion on the cron process.
+- Only the JPEG, PNG, GIF and WebP decoders are ever reached: the file's
+  sniffed type must be on that allowlist, and with Imagick the decoder is
+  pinned to that type before reading, so ImageMagick never picks a coder
+  from the bytes alone. The plugin also sets Imagick resource limits (area,
+  memory, disk, time) itself rather than relying on the server's
+  `policy.xml`.
 
 ## Tests
 

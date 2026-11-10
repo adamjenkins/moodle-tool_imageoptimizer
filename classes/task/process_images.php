@@ -43,6 +43,20 @@ class process_images extends \core\task\scheduled_task {
     const MAX_PIXELS = 40_000_000;
 
     /**
+     * Mimetypes the task will select and decode. Anything else (TIFF, BMP, PSD,
+     * SVG, ICO, ...) is left alone: it is not worth widening the parser attack
+     * surface for formats the encoder cannot write back anyway.
+     */
+    const ALLOWED_MIMETYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+    /**
+     * Sniffed image types (getimagesizefromstring() index 2) allowed to be
+     * decoded, matching ALLOWED_MIMETYPES. A file whose stored mimetype is
+     * allowed but whose bytes are something else is recorded and skipped.
+     */
+    const ALLOWED_IMAGETYPES = [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_GIF, IMAGETYPE_WEBP];
+
+    /**
      * Get the task name as shown in the scheduled tasks admin UI.
      *
      * @return string
@@ -69,19 +83,24 @@ class process_images extends \core\task\scheduled_task {
         $minsizekb = max(0, (int) get_config('tool_imageoptimizer', 'minsizekb'));
         $minsizebytes = $minsizekb * 1024;
 
+        // Aliases (referencefileid set) are never selected: their content
+        // belongs to the file they point at, and rewriting one would turn the
+        // alias into a standalone copy.
+        [$mimesql, $params] = $DB->get_in_or_equal(self::ALLOWED_MIMETYPES, SQL_PARAMS_NAMED, 'mime');
         $sql = "SELECT f.*
                   FROM {files} f
              LEFT JOIN {tool_imageoptimizer_files} o ON o.pathnamehash = f.pathnamehash
-                 WHERE " . $DB->sql_like('f.mimetype', ':mimetype') . "
+                 WHERE f.mimetype {$mimesql}
                    AND f.filename <> '.'
                    AND f.filesize > :minsize
                    AND f.component <> 'tool_imageoptimizer'
+                   AND f.referencefileid IS NULL
                    AND o.id IS NULL
               ORDER BY f.id ASC";
 
         $fs = get_file_storage();
         $filesystem = $fs->get_file_system();
-        $params = ['mimetype' => 'image/%', 'minsize' => $minsizebytes];
+        $params['minsize'] = $minsizebytes;
         $records = $DB->get_records_sql($sql, $params, 0, self::BATCH_LIMIT);
 
         foreach ($records as $record) {
@@ -145,16 +164,30 @@ class process_images extends \core\task\scheduled_task {
         // an enormous canvas, and both GD and Imagick allocate memory based on
         // declared pixels rather than file size. Reject pathological images
         // up front instead of risking memory exhaustion on the cron process.
+        // The sniffed type must be on the allowlist too, whatever the stored
+        // mimetype claims, so only the JPEG/PNG/GIF/WebP decoders are reached.
+        // Multi-frame images (animated GIF, APNG, animated WebP) are skipped:
+        // re-encoding keeps a single frame, irreversibly losing the animation,
+        // and every frame is decoded, which the pixel guard does not bound.
+        // A file that has aliases pointing at it is skipped as well: replacing
+        // it would detach those aliases into standalone copies of the old bytes.
         $imageinfo = @getimagesizefromstring($content);
-        if ($imageinfo === false || $imageinfo[0] * $imageinfo[1] > self::MAX_PIXELS) {
-            // This file cannot (or must not) be decoded, so it will never be
-            // optimized. Record it anyway: without a tracking row it is
+        if (
+            $imageinfo === false
+            || !in_array($imageinfo[2], self::ALLOWED_IMAGETYPES, true)
+            || $imageinfo[0] * $imageinfo[1] > self::MAX_PIXELS
+            || self::is_multi_frame($content, $imageinfo[2])
+            || !empty(get_file_storage()->get_references_by_storedfile($file))
+        ) {
+            // This file cannot (or must not) be decoded or replaced, so it will
+            // never be optimized. Record it anyway: without a tracking row it is
             // re-selected and its blob re-read on every run, and because the
             // batch is ordered by id and capped, a cluster of such files would
             // starve everything else from ever being processed.
             $this->record_processed($file, $originalsize, $originalsize);
             return;
         }
+        $inputformat = image_type_to_extension($imageinfo[2], false);
 
         // Clamp administrator-configured values to sane ranges: a quality
         // outside 1-100 or a zero dimension (which makes the resize ratio 0)
@@ -167,7 +200,14 @@ class process_images extends \core\task\scheduled_task {
         $format = $this->resolve_target_format($file->get_mimetype(), $targetformat);
 
         if (class_exists('Imagick')) {
-            $newcontent = $this->optimize_with_imagick($content, $format['format'], $maxwidth, $maxheight, $quality);
+            $newcontent = $this->optimize_with_imagick(
+                $content,
+                $format['format'],
+                $maxwidth,
+                $maxheight,
+                $quality,
+                $inputformat
+            );
         } else {
             $newcontent = $this->optimize_with_gd($content, $format['format'], $maxwidth, $maxheight, $quality);
         }
@@ -278,6 +318,36 @@ class process_images extends \core\task\scheduled_task {
     }
 
     /**
+     * Whether the image bytes hold more than one frame.
+     *
+     * Checked on the raw bytes so that it works the same with or without
+     * Imagick. The checks are deliberately conservative: a false positive only
+     * means a still image is left unoptimized.
+     *
+     * @param string $content image bytes
+     * @param int $imagetype IMAGETYPE_* constant from getimagesizefromstring()
+     * @return bool
+     */
+    public static function is_multi_frame(string $content, int $imagetype): bool {
+        switch ($imagetype) {
+            case IMAGETYPE_GIF:
+                // Each frame of an animated GIF carries its own graphic control
+                // extension (0x21 0xF9 0x04) and image descriptor (0x2C after a
+                // block terminator); a still GIF has at most one of each.
+                return substr_count($content, "\x21\xF9\x04") > 1
+                    || substr_count($content, "\x00\x2C") > 1;
+            case IMAGETYPE_PNG:
+                // APNG declares its animation in an acTL chunk.
+                return strpos($content, 'acTL') !== false;
+            case IMAGETYPE_WEBP:
+                // Animated WebP carries an ANIM chunk.
+                return strpos($content, 'ANIM') !== false;
+            default:
+                return false;
+        }
+    }
+
+    /**
      * Decide which image format to encode to, based on the admin setting and
      * the file's current mimetype.
      *
@@ -317,6 +387,8 @@ class process_images extends \core\task\scheduled_task {
      * @param int $maxwidth
      * @param int $maxheight
      * @param int $quality
+     * @param string|null $inputformat decoder to pin ('jpeg', 'png', 'gif' or
+     *        'webp'), so ImageMagick never picks a coder from the bytes alone
      * @return string|null encoded image content, or null on failure
      */
     protected function optimize_with_imagick(
@@ -324,10 +396,29 @@ class process_images extends \core\task\scheduled_task {
         string $format,
         int $maxwidth,
         int $maxheight,
-        int $quality
+        int $quality,
+        ?string $inputformat = null
     ): ?string {
         try {
+            self::set_imagick_limits();
+
+            // Ping first (reads headers only) and refuse multi-frame input:
+            // every frame would be decoded, and only one would survive.
+            $probe = new \Imagick();
+            if ($inputformat !== null) {
+                $probe->setFormat($inputformat);
+            }
+            $probe->pingImageBlob($content);
+            $frames = $probe->getNumberImages();
+            $probe->destroy();
+            if ($frames > 1) {
+                return null;
+            }
+
             $im = new \Imagick();
+            if ($inputformat !== null) {
+                $im->setFormat($inputformat);
+            }
             $im->readImageBlob($content);
 
             $width = $im->getImageWidth();
@@ -367,6 +458,35 @@ class process_images extends \core\task\scheduled_task {
             return $newcontent;
         } catch (\ImagickException $e) {
             return null;
+        }
+    }
+
+    /**
+     * Bound ImageMagick's own resource use for the decode, rather than relying
+     * on the distribution's policy.xml. The limits are process-wide and are
+     * generous for any legitimate upload.
+     */
+    protected static function set_imagick_limits(): void {
+        $limits = [
+            'RESOURCETYPE_AREA'   => self::MAX_PIXELS,
+            'RESOURCETYPE_WIDTH'  => 20000,
+            'RESOURCETYPE_HEIGHT' => 20000,
+            'RESOURCETYPE_MEMORY' => 256 * 1024 * 1024,
+            'RESOURCETYPE_MAP'    => 512 * 1024 * 1024,
+            'RESOURCETYPE_DISK'   => 1024 * 1024 * 1024,
+            'RESOURCETYPE_TIME'   => 60,
+        ];
+        foreach ($limits as $name => $value) {
+            // Older Imagick builds lack some of these constants.
+            if (!defined('\Imagick::' . $name)) {
+                continue;
+            }
+            try {
+                \Imagick::setResourceLimit(constant('\Imagick::' . $name), $value);
+            } catch (\Throwable $e) {
+                // A limit the linked ImageMagick does not support is not fatal.
+                continue;
+            }
         }
     }
 
