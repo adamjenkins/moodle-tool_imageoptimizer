@@ -448,6 +448,10 @@ class process_images extends \core\task\scheduled_task {
             if ($icc !== '') {
                 $im->profileImage('icc', $icc);
             }
+            // The decoder was pinned with setFormat(), and the wand's format
+            // wins over the image's when the blob is written: set both, or the
+            // file keeps its input format under the new mimetype.
+            $im->setFormat($format);
             $im->setImageFormat($format);
             if ($format === 'jpeg') {
                 $im->setInterlaceScheme(\Imagick::INTERLACE_PLANE);
